@@ -34,6 +34,13 @@
   const twice = window.glyphGetText();
   r.idempotent = twice === out;
 
+  // The chip must stay a span the app resolves by name — never an anchor with
+  // an href the document supplied.
+  const chips = [...document.querySelectorAll("#md span.wikilink")];
+  r.wikilinkChips = chips.length > 0;
+  r.wikilinksHaveNoHref = chips.every((c) => !c.hasAttribute("href"));
+  r.wikilinksCarryTarget = chips.every((c) => /^!?\[\[.+\]\]$/.test(c.getAttribute("data-raw") || ""));
+
   r.ok = Object.keys(r).every((k) => r[k] === true);
   return JSON.stringify(r);
 })()

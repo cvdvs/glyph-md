@@ -3,6 +3,7 @@
 #import "GlyphTheme.h"
 #import "GlyphHighlighter.h"
 #import "GlyphGutter.h"
+#import "GlyphVault.h"
 
 static NSColor *DynamicColor(CGFloat lr, CGFloat lg, CGFloat lb,
                              CGFloat dr, CGFloat dg, CGFloat db) {
@@ -994,6 +995,24 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         if (self.roundTripChecked && !self.roundTripSafe) return;
         NSString *text = [body[@"text"] isKindOfClass:[NSString class]] ? body[@"text"] : nil;
         if (text) [self applySourceEdit:text];
+    } else if ([type isEqualToString:@"openWikilink"]) {
+        // The page sends a NAME, never a path; GlyphVault decides what file that
+        // can mean, and refuses anything outside the note's own vault.
+        NSString *target = [body[@"target"] isKindOfClass:[NSString class]] ? body[@"target"] : nil;
+        NSURL *found = target ? [GlyphVault resolveTarget:target fromNoteAtURL:self.fileURL] : nil;
+        if (found) {
+            [[NSDocumentController sharedDocumentController]
+                openDocumentWithContentsOfURL:found
+                                      display:YES
+                            completionHandler:^(NSDocument *d, BOOL already, NSError *e) {}];
+        } else if (target.length) {
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = [NSString stringWithFormat:@"No note called \u201c%@\u201d nearby",
+                                 [GlyphVault basenameForTarget:target] ?: target];
+            alert.informativeText = @"Glyph looked in this note's folder and the rest of its vault.";
+            [alert addButtonWithTitle:@"OK"];
+            [alert beginSheetModalForWindow:self.windowForSheet completionHandler:nil];
+        }
     } else if ([type isEqualToString:@"openURL"]) {
         NSString *urlString = [body[@"url"] isKindOfClass:[NSString class]] ? body[@"url"] : nil;
         NSURL *url = urlString ? [NSURL URLWithString:urlString] : nil;

@@ -69,6 +69,12 @@ jobs:
         run: |
           python3 Scripts/make-preview.py Scripts/fixtures/fidelity.md /tmp/fidelity.html
           /tmp/webkit-smoke /tmp/fidelity.html Scripts/fixtures/fidelity.md Scripts/fidelity-smoke.js
+      - name: Wikilinks — resolve inside the vault, never outside it
+        run: |
+          clang -fobjc-arc Scripts/vault-smoke.m Sources/GlyphVault.m \
+            -o /tmp/vault-smoke -framework Foundation
+          mkdir -p /tmp/vaultdir
+          /tmp/vault-smoke /tmp/vaultdir
       - name: Links — notes open, executables do not
         run: |
           clang -fobjc-arc Scripts/link-smoke.m -o /tmp/link-smoke -framework Foundation

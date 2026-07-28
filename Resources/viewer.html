@@ -344,6 +344,8 @@
     border-radius: 3px;
   }
 
+  .wikilink { cursor: pointer; }
+  .wikilink:hover { text-decoration: underline; text-underline-offset: 3px; }
   .wikilink {
     color: var(--link);
     background: rgba(var(--link-rgb), 0.11);
@@ -1802,6 +1804,20 @@ function attachEditing(md) {
 
   const modName = window.__glyphPlatform === "mac" ? "⌘" : "Ctrl";
   md.querySelectorAll("a").forEach((a) => { a.title = modName + "-click to open"; });
+
+  // A wikilink names a note. The app resolves the name — the page never sends a
+  // path and never builds an href, so a document cannot point this anywhere.
+  md.querySelectorAll("span.wikilink").forEach((el) => {
+    const raw = el.getAttribute("data-raw") || "";
+    const target = raw.replace(/^!?\[\[/, "").replace(/\]\]$/, "");
+    el.title = modName + "-click to open this note";
+    el.addEventListener("click", (e) => {
+      if (!MOD(e)) return;          // plain click still places the cursor
+      e.preventDefault();
+      e.stopPropagation();
+      postToApp({ type: "openWikilink", target: target });
+    });
+  });
 
   // Click a held-back remote image to fetch it.
   md.querySelectorAll("img.remote-img").forEach((img) => {
