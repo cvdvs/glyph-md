@@ -41,6 +41,25 @@ clang -fobjc-arc Scripts/set-default-md.m -o /tmp/glyph-default -framework Cocoa
 
 Requires macOS 13+. Uninstall by deleting `/Applications/Glyph.app`.
 
+### Any other computer
+
+There is no native Windows or Linux build yet, but there is a **single HTML file**
+that runs the same editor in any browser: tabs, the formatting toolbar, open and
+save, raw markdown view, light and dark. Nothing to install, no server, no
+network — the whole app is one self-contained file.
+
+Grab `glyph.html` from the [latest release](https://github.com/cvdvs/glyph-md/releases)
+and open it, or build it yourself:
+
+```bash
+python3 Scripts/make-preview.py sample.md glyph.html --chrome
+```
+
+In Chrome and Edge it saves straight back to the file you opened. Safari and
+Firefox lack that browser API, so saving downloads the file instead. Pictures are
+embedded in the document rather than copied next to it, since a web page cannot
+write files beside your note.
+
 ## Shortcuts
 
 | Keys | Does |
@@ -58,7 +77,7 @@ Requires macOS 13+. Uninstall by deleting `/Applications/Glyph.app`.
 
 Two layers, deliberately simple:
 
-- **Native shell** — Objective-C + AppKit ([`Sources/`](Sources)): a document-based app providing the window, tabs, toolbar, autosave, and Open Recent. Objective-C so the whole thing builds with `clang` and the stock SDK — no Xcode, no package manager, no dependencies to install. The raw editor's source coloring lives in `GlyphHighlighter` with the palette in `GlyphTheme` (the same values as the CSS, so the two views agree) and line numbers in `GlyphGutter`.
+- **Native shell** — Objective-C + AppKit ([`Sources/`](Sources)): a document-based app providing the window, tabs, toolbar, autosave, and Open Recent. Off macOS the same chrome is provided by an optional in-page layer in `viewer.html`, gated on `window.__glyphChrome` so the Mac app never sees it. Objective-C so the whole thing builds with `clang` and the stock SDK — no Xcode, no package manager, no dependencies to install. The raw editor's source coloring lives in `GlyphHighlighter` with the palette in `GlyphTheme` (the same values as the CSS, so the two views agree) and line numbers in `GlyphGutter`.
 - **The page** — one `WKWebView` rendering [`Resources/viewer.html`](Resources/viewer.html): the entire UI (CSS + JS) in a single file. [marked.js](https://github.com/markedjs/marked) (MIT, vendored) parses markdown; a custom layer adds the Obsidian extras; the editing layer makes the rendered DOM `contenteditable` and serializes it back to markdown as you type.
 
 `sample.md` doubles as the feature checklist — open it in Glyph to see everything render.
