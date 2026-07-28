@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include "glyph_json.h"
 #include "resources.h"
 
 #if defined(_WIN32)
@@ -506,7 +507,8 @@ static void report_selftest(const std::string &name, const std::string &json) {
   // quietly writes something different from what the Mac app writes, and that
   // difference would land in the owner's files rather than in a test. This is
   // the same byte-for-byte check CI runs against Blink and WKWebView.
-  std::string got = webview::detail::json_parse(json, "serialized", 0);
+  std::string got;
+  json_field(json, "serialized", &got);
   std::string want = resource("golden_sample_md");
   if (got.empty()) {
     std::printf("  %-10s NO SERIALIZATION RETURNED\n", "golden");
@@ -544,23 +546,36 @@ static void report_selftest(const std::string &name, const std::string &json) {
 
 static void on_page_message(const char *id, const char *req, void *) {
   // req is the argument array of the bound call; element 0 is our JSON.
-  std::string payload = webview::detail::json_parse(std::string(req), "", 0);
-  std::string type = webview::detail::json_parse(payload, "type", 0);
+  std::string payload, type;
+  if (!json_first_element(std::string(req), &payload) ||
+      !json_field(payload, "type", &type)) {
+    std::fprintf(stderr, "glyph: unreadable message from the page, ignored\n");
+    webview_return(g.w, id, 1, "\"bad message\"");
+    return;
+  }
 
   if (type == "ready") {
     // The interface is up. Nothing may be evaluated into the page before this.
     if (g.selftest) run_selftest_stage();
 
   } else if (type == "source") {
-    g.pending = webview::detail::json_parse(payload, "text", 0);
+    json_field(payload, "text", &g.pending);
 
   } else if (type == "pickOpen") {
     for (const auto &p : ask_open_paths(g.w)) open_path_in_page(p);
 
   } else if (type == "save") {
-    std::string text = webview::detail::json_parse(payload, "text", 0);
-    std::string name = webview::detail::json_parse(payload, "name", 0);
-    std::string ids = webview::detail::json_parse(payload, "id", 0);
+    std::string text, name, ids;
+    // A save whose text cannot be read is REFUSED. Writing what a failed parse
+    // returns would replace the note with nothing, which is how a file dies.
+    if (!json_field(payload, "text", &text)) {
+      std::fprintf(stderr, "glyph: refusing to save - the document could not be "
+                           "read back from the page\n");
+      webview_return(g.w, id, 1, "\"unreadable document\"");
+      return;
+    }
+    json_field(payload, "name", &name);
+    json_field(payload, "id", &ids);
     int docid = ids.empty() ? 0 : std::atoi(ids.c_str());
     Doc *d = find_doc(docid);
     std::string path = d ? d->path : std::string();
@@ -585,7 +600,8 @@ static void on_page_message(const char *id, const char *req, void *) {
                js_string(file_url(dir_of(path), true))});
 
   } else if (type == "openURL") {
-    std::string url = webview::detail::json_parse(payload, "url", 0);
+    std::string url;
+    json_field(payload, "url", &url);
     Doc *d = find_doc(g.active);
     std::string doc_dir = d && !d->path.empty() ? dir_of(d->path) : std::string();
     std::string note;
@@ -599,7 +615,8 @@ static void on_page_message(const char *id, const char *req, void *) {
     // Resolution lives in the Mac app's GlyphVault. Until that is ported, a
     // wikilink that names a sibling file opens; anything else is ignored,
     // which is the safe half of the behaviour rather than a wrong guess.
-    std::string target = webview::detail::json_parse(payload, "target", 0);
+    std::string target;
+    json_field(payload, "target", &target);
     Doc *d = find_doc(g.active);
     if (!d || d->path.empty() || target.empty()) return;
     // A target is a NAME, never a path (CLAUDE.md rule 29).
@@ -615,8 +632,9 @@ static void on_page_message(const char *id, const char *req, void *) {
     }
 
   } else if (type == "selftest") {
-    std::string name = webview::detail::json_parse(payload, "name", 0);
-    std::string result = webview::detail::json_parse(payload, "result", 0);
+    std::string name, result;
+    json_field(payload, "name", &name);
+    json_field(payload, "result", &result);
     report_selftest(name, result);
     g.selftest_stage++;
     run_selftest_stage();
