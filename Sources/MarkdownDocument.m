@@ -133,7 +133,7 @@ static NSColor *EditorTextColor(void) {
     window.toolbar = toolbar;
 
     NSView *content = [[NSView alloc] initWithFrame:frame];
-    CGFloat barHeight = 34;
+    CGFloat barHeight = 42;
 
     // Reading pane
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
@@ -252,13 +252,17 @@ static NSColor *EditorTextColor(void) {
     if (symbol) {
         if (@available(macOS 11.0, *)) {
             img = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:tip];
+            NSImageSymbolConfiguration *cfg =
+                [NSImageSymbolConfiguration configurationWithPointSize:15
+                                                                weight:NSFontWeightMedium];
+            img = [img imageWithSymbolConfiguration:cfg] ?: img;
         }
     }
     if (img) {
         b = [NSButton buttonWithImage:img target:self action:action];
     } else {
         b = [NSButton buttonWithTitle:(title ?: @"?") target:self action:action];
-        b.font = [NSFont systemFontOfSize:11.5 weight:NSFontWeightSemibold];
+        b.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
     }
     b.bezelStyle = NSBezelStyleTexturedRounded;
     b.bordered = YES;
@@ -295,21 +299,24 @@ static NSColor *EditorTextColor(void) {
     NSButton *eraser = [self fmtButton:@"eraser" title:@"⌫" action:@selector(fmtClearFormatting:)
                                    tip:@"Clear formatting from selection"];
 
-    NSStackView *stack = [NSStackView stackViewWithViews:
-        @[undo, redo, h1, h2, h3, bold, italic, underline, strike, hl, code,
-          link, image, bullets, check, quote, callout, table, codeblock, eraser]];
+    NSStackView *stack = [[NSStackView alloc] initWithFrame:bar.bounds];
     stack.translatesAutoresizingMaskIntoConstraints = YES;
     stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     stack.alignment = NSLayoutAttributeCenterY;
-    stack.spacing = 6;
+    stack.spacing = 8;
     stack.edgeInsets = NSEdgeInsetsMake(0, 12, 0, 12);
-    stack.frame = bar.bounds;
     stack.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [stack setCustomSpacing:16 afterView:redo];
-    [stack setCustomSpacing:16 afterView:h3];
-    [stack setCustomSpacing:16 afterView:code];
-    [stack setCustomSpacing:16 afterView:image];
-    [stack setCustomSpacing:16 afterView:codeblock];
+    NSArray<NSButton *> *buttons =
+        @[undo, redo, h1, h2, h3, bold, italic, underline, strike, hl, code,
+          link, image, bullets, check, quote, callout, table, codeblock, eraser];
+    for (NSButton *b in buttons) {
+        [stack addView:b inGravity:NSStackViewGravityCenter];
+    }
+    [stack setCustomSpacing:20 afterView:redo];
+    [stack setCustomSpacing:20 afterView:h3];
+    [stack setCustomSpacing:20 afterView:code];
+    [stack setCustomSpacing:20 afterView:image];
+    [stack setCustomSpacing:20 afterView:codeblock];
     [bar addSubview:stack];
 
     NSBox *line = [[NSBox alloc] initWithFrame:NSMakeRect(0, 0, NSWidth(frame), 1)];
