@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Runner labels are pinned deliberately. The webkit2gtk 4.0 -> 4.1 rename has
+# already broken this class of build once industry-wide; a pinned label means it
+# breaks when someone bumps it on purpose, not on a random Tuesday.
+
+jobs:
+  # The cheapest, highest-value job: run the shared assertion suite against the
+  # SAME engine Windows WebView2 uses (Blink), with no native build at all.
+  engine:
+    name: Shared UI — Blink (the Windows engine)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Locate Chrome
+        run: |
+          for p in /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium-browser /usr/bin/chromium; do
+            if [ -x "$p" ]; then echo "CHROME_PATH=$p" >> "$GITHUB_ENV"; echo "found $p"; exit 0; fi
+          done
+          echo "::error::No Chrome/Chromium on this runner; engine job cannot run."
+          exit 1
+      - name: Smoke test + screenshots
+        run: node Scripts/engine-smoke.mjs --shots artifacts/blink
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-blink
+          path: artifacts/blink
+          if-no-files-found: warn
+
+  # Guards the shipping macOS app: it must build, and the shared UI must behave
+  # identically under WKWebView, including byte-identical markdown output.
+  macos:
+    name: macOS app — build + WKWebView suite
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Glyph.app
+        run: ./build.sh
+      - name: Compose the page
+        run: python3 Scripts/make-preview.py sample.md /tmp/composed.html
+      - name: Build the WKWebView harness
+        run: clang -fobjc-arc Scripts/webkit-smoke.m -o /tmp/webkit-smoke -framework Cocoa -framework WebKit
+      - name: Run the shared assertion suite
+        run: /tmp/webkit-smoke /tmp/composed.html sample.md Scripts/smoke.js /tmp/mac-result.json
+      - name: Assert markdown output has not drifted
+        run: |
+          python3 - <<'EOF'
+          import json, sys, difflib
+          actual = json.load(open('/tmp/mac-result.json'))['serialized']
+          golden = open('Scripts/fixtures/golden-sample.md').read()
+          if actual != golden:
+              print("Serialization drifted from Scripts/fixtures/golden-sample.md:")
+              sys.stdout.writelines(difflib.unified_diff(
+                  golden.splitlines(True), actual.splitlines(True),
+                  fromfile='golden', tofile='actual'))
+              sys.exit(1)
+          print(f"markdown output identical to golden ({len(golden)} bytes)")
+          EOF
+      - name: Upload the built app
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Glyph-macos
+          path: build/Glyph.app
+          if-no-files-found: warn
+
+  # The standalone page: one HTML file that renders and edits markdown in any
+  # browser, on any OS. No build, nothing to install — useful on its own.
+  viewer:
+    name: Standalone viewer page
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build glyph-viewer.html
+        run: |
+          mkdir -p artifacts
+          python3 Scripts/make-preview.py sample.md artifacts/glyph-viewer.html
+          ls -la artifacts/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glyph-viewer-html
+          path: artifacts/glyph-viewer.html

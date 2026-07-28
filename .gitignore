@@ -1,3 +1,5 @@
 build/
 assets/glyph.iconset/
 .DS_Store
+Scripts/fixtures/.engine-smoke.html
+artifacts/

@@ -7,9 +7,11 @@
   :root {
     --bg: #ffffff;
     --fg: #26272b;
+    --fg-rgb: 38, 39, 43;
     --muted: #75797f;
     --faint: #a9adb3;
     --accent: #6944ff;
+    --accent-rgb: 105, 68, 255;
     --accent-soft: rgba(105, 68, 255, 0.08);
     --border: #e8e8ec;
     --border-strong: #d2d2d8;
@@ -22,30 +24,49 @@
     --h3: #178d99;
     --h4: #7a4fd0;
     --link: #c62f6d;
+    --link-rgb: 198, 47, 109;
     --quote: #6d5fb0;
+    --quote-rgb: 109, 95, 176;
     --tc0: #c62f6d;
+    --tc0-rgb: 198, 47, 109;
     --tc1: #9c6a12;
+    --tc1-rgb: 156, 106, 18;
     --tc2: #127f8b;
+    --tc2-rgb: 18, 127, 139;
     --tc3: #3d8f52;
+    --tc3-rgb: 61, 143, 82;
     --tc4: #7a4fd0;
+    --tc4-rgb: 122, 79, 208;
     --tc5: #2e6cc9;
+    --tc5-rgb: 46, 108, 201;
     --co-note: #4a8cff;
+    --co-note-rgb: 74, 140, 255;
     --co-tip: #2fb8a5;
+    --co-tip-rgb: 47, 184, 165;
     --co-warning: #e6a23c;
+    --co-warning-rgb: 230, 162, 60;
     --co-danger: #f75c5c;
+    --co-danger-rgb: 247, 92, 92;
     --co-success: #4fbb6b;
+    --co-success-rgb: 79, 187, 107;
     --co-question: #dfae3d;
+    --co-question-rgb: 223, 174, 61;
     --co-quote: #9aa0a8;
+    --co-quote-rgb: 154, 160, 168;
     --co-example: #a06bff;
+    --co-example-rgb: 160, 107, 255;
     --co-important: #3fb2d4;
+    --co-important-rgb: 63, 178, 212;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1e1e26;
       --fg: #d8dade;
+      --fg-rgb: 216, 218, 222;
       --muted: #9094a0;
       --faint: #5f6370;
       --accent: #9c8bff;
+      --accent-rgb: 156, 139, 255;
       --accent-soft: rgba(156, 139, 255, 0.13);
       --border: #32323c;
       --border-strong: #474752;
@@ -58,13 +79,21 @@
       --h3: #54bec4;
       --h4: #b48bf2;
       --link: #ee6d95;
+      --link-rgb: 238, 109, 149;
       --quote: #a99bd6;
+      --quote-rgb: 169, 155, 214;
       --tc0: #ef6a92;
+      --tc0-rgb: 239, 106, 146;
       --tc1: #e5ad4c;
+      --tc1-rgb: 229, 173, 76;
       --tc2: #54bec4;
+      --tc2-rgb: 84, 190, 196;
       --tc3: #7cbf72;
+      --tc3-rgb: 124, 191, 114;
       --tc4: #b48bf2;
+      --tc4-rgb: 180, 139, 242;
       --tc5: #6ea6f5;
+      --tc5-rgb: 110, 166, 245;
     }
   }
 
@@ -77,13 +106,15 @@
     color: var(--fg);
   }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
+      "Segoe UI Variable Text", "Segoe UI", Inter, Cantarell, "Adwaita Sans",
+      "Noto Sans", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif;
     font-size: 15.5px;
     line-height: 1.68;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-  ::selection { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+  ::selection { background: rgba(var(--accent-rgb), 0.26); }
 
   #content {
     max-width: 44rem;
@@ -116,7 +147,7 @@
   #md a {
     color: var(--link);
     text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent);
+    text-decoration-color: rgba(var(--link-rgb), 0.45);
     text-underline-offset: 3px;
   }
   #md a:hover { text-decoration-color: var(--link); }
@@ -136,7 +167,8 @@
   }
 
   #md code {
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Code", "Cascadia Mono",
+      Consolas, "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Liberation Mono", monospace;
     font-size: 0.855em;
     background: var(--code-bg);
     padding: 0.14em 0.42em;
@@ -161,7 +193,7 @@
   #md blockquote {
     margin: 1.2em 0;
     padding: 0.05em 0 0.05em 1.05em;
-    border-left: 2.5px solid color-mix(in srgb, var(--quote) 60%, transparent);
+    border-left: 2.5px solid rgba(var(--quote-rgb), 0.6);
     color: var(--quote);
   }
   #md blockquote p:last-child { margin-bottom: 0; }
@@ -191,7 +223,7 @@
     text-align: left;
     font-weight: 600;
     color: var(--muted);
-    background: color-mix(in srgb, var(--fg) 3%, transparent);
+    background: rgba(var(--fg-rgb), 0.03);
   }
   #md th, #md td {
     padding: 0.5em 0.9em;
@@ -208,7 +240,7 @@
 
   .wikilink {
     color: var(--link);
-    background: color-mix(in srgb, var(--link) 11%, transparent);
+    background: rgba(var(--link-rgb), 0.11);
     padding: 0.05em 0.42em;
     border-radius: 6px;
   }
@@ -221,31 +253,32 @@
     font-weight: 500;
     white-space: nowrap;
   }
-  .tag-c0 { color: var(--tc0); background: color-mix(in srgb, var(--tc0) 14%, transparent); }
-  .tag-c1 { color: var(--tc1); background: color-mix(in srgb, var(--tc1) 14%, transparent); }
-  .tag-c2 { color: var(--tc2); background: color-mix(in srgb, var(--tc2) 14%, transparent); }
-  .tag-c3 { color: var(--tc3); background: color-mix(in srgb, var(--tc3) 14%, transparent); }
-  .tag-c4 { color: var(--tc4); background: color-mix(in srgb, var(--tc4) 14%, transparent); }
-  .tag-c5 { color: var(--tc5); background: color-mix(in srgb, var(--tc5) 14%, transparent); }
+  .tag-c0 { color: var(--tc0); background: rgba(var(--tc0-rgb), 0.14); }
+  .tag-c1 { color: var(--tc1); background: rgba(var(--tc1-rgb), 0.14); }
+  .tag-c2 { color: var(--tc2); background: rgba(var(--tc2-rgb), 0.14); }
+  .tag-c3 { color: var(--tc3); background: rgba(var(--tc3-rgb), 0.14); }
+  .tag-c4 { color: var(--tc4); background: rgba(var(--tc4-rgb), 0.14); }
+  .tag-c5 { color: var(--tc5); background: rgba(var(--tc5-rgb), 0.14); }
 
   /* ---------- callouts ---------- */
   #md .callout {
     --co: var(--co-note);
-    border: 1px solid color-mix(in srgb, var(--co) 30%, transparent);
+    --co-rgb: var(--co-note-rgb);
+    border: 1px solid rgba(var(--co-rgb), 0.3);
     border-radius: 10px;
-    background: color-mix(in srgb, var(--co) 9%, transparent);
+    background: rgba(var(--co-rgb), 0.09);
     padding: 12px 16px;
     margin: 1.3em 0;
     color: var(--fg);
   }
-  #md .callout[data-callout="tip"] { --co: var(--co-tip); }
-  #md .callout[data-callout="warning"] { --co: var(--co-warning); }
-  #md .callout[data-callout="danger"] { --co: var(--co-danger); }
-  #md .callout[data-callout="success"] { --co: var(--co-success); }
-  #md .callout[data-callout="question"] { --co: var(--co-question); }
-  #md .callout[data-callout="quote"] { --co: var(--co-quote); }
-  #md .callout[data-callout="example"] { --co: var(--co-example); }
-  #md .callout[data-callout="important"] { --co: var(--co-important); }
+  #md .callout[data-callout="tip"] { --co: var(--co-tip); --co-rgb: var(--co-tip-rgb); }
+  #md .callout[data-callout="warning"] { --co: var(--co-warning); --co-rgb: var(--co-warning-rgb); }
+  #md .callout[data-callout="danger"] { --co: var(--co-danger); --co-rgb: var(--co-danger-rgb); }
+  #md .callout[data-callout="success"] { --co: var(--co-success); --co-rgb: var(--co-success-rgb); }
+  #md .callout[data-callout="question"] { --co: var(--co-question); --co-rgb: var(--co-question-rgb); }
+  #md .callout[data-callout="quote"] { --co: var(--co-quote); --co-rgb: var(--co-quote-rgb); }
+  #md .callout[data-callout="example"] { --co: var(--co-example); --co-rgb: var(--co-example-rgb); }
+  #md .callout[data-callout="important"] { --co: var(--co-important); --co-rgb: var(--co-important-rgb); }
   #md .callout-title {
     color: var(--co);
     font-weight: 600;
@@ -265,10 +298,12 @@
   #md details.callout > summary.callout-title {
     cursor: pointer;
     user-select: none;
+    -webkit-user-select: none;
     list-style: none;
     outline: none;
   }
   #md details.callout > summary.callout-title::-webkit-details-marker { display: none; }
+  #md details.callout > summary.callout-title::marker { content: none; }
   #md details.callout > summary.callout-title::after {
     content: "›";
     display: inline-block;
@@ -296,16 +331,19 @@
     color: var(--muted);
     cursor: pointer;
     user-select: none;
+    -webkit-user-select: none;
     list-style: none;
   }
   .props summary::-webkit-details-marker { display: none; }
+  .props summary::marker { content: none; }
   .props summary::after { content: " ›"; opacity: 0.6; }
   .props[open] summary::after { content: ""; }
   .props table { border-collapse: collapse; margin: 9px 0 3px; }
   .props td { padding: 3px 0; vertical-align: top; font-size: 13.5px; border: none; }
   .props td.k {
     color: var(--muted);
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Code", "Cascadia Mono",
+      Consolas, "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Liberation Mono", monospace;
     font-size: 12px;
     padding-right: 24px;
     padding-top: 5px;
@@ -326,7 +364,8 @@
     padding: 0;
     background: none;
     border: none;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Code", "Cascadia Mono",
+      Consolas, "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", "Liberation Mono", monospace;
     font-size: 12px;
     line-height: 1.6;
     white-space: pre-wrap;
@@ -632,6 +671,26 @@ function serializeInline(node) {
         break;
       case "BR": out += "\n"; break;
       case "INPUT": case "SVG": case "svg": break;
+      case "SPAN": {
+        // Chromium/WebView2 sometimes styles a selection with an inline-styled
+        // span instead of <b>/<i>. Without this the formatting looks applied on
+        // screen and is silently dropped when the file is written.
+        const inner = serializeInline(ch);
+        const st = ch.style || {};
+        const weight = st.fontWeight || "";
+        let out2 = inner;
+        if (inner.trim()) {
+          if (weight === "bold" || weight === "bolder" || parseInt(weight, 10) >= 600) {
+            out2 = "**" + out2 + "**";
+          }
+          if (st.fontStyle === "italic") out2 = "*" + out2 + "*";
+          if ((st.textDecorationLine || st.textDecoration || "").indexOf("line-through") >= 0) {
+            out2 = "~~" + out2 + "~~";
+          }
+        }
+        out += out2;
+        break;
+      }
       default: out += serializeInline(ch); break;
     }
   });
@@ -779,10 +838,51 @@ let curPrefix = "";
 let lastSerialized = "";
 let syncTimer = null;
 
-function postToApp(msg) {
+// Which modifier means "command" here. The shell may set __glyphPlatform before
+// the page loads; otherwise sniff. On macOS this resolves to "mac" with no shell
+// change at all, so the existing app is untouched.
+window.__glyphPlatform = window.__glyphPlatform ||
+  (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "mac"
+    : /Win/.test(navigator.userAgent) ? "win" : "linux");
+const MOD = (e) => (window.__glyphPlatform === "mac" ? e.metaKey : e.ctrlKey);
+
+// One exit point, three hosts. WKWebView (macOS) and WebKitGTK (Linux) take the
+// object; WebView2 (Windows) only accepts strings and publishes its bridge
+// asynchronously during startup — so an early edit must queue rather than vanish.
+// Dropping a message here would be invisible: doSync() has already recorded the
+// text as synced, so the file would silently stop receiving edits.
+const __glyphPending = [];
+
+function __glyphBridgeReady() {
+  return !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.glyph) ||
+    !!(window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function");
+}
+
+function __glyphDeliver(msg) {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.glyph) {
     window.webkit.messageHandlers.glyph.postMessage(msg);
+    return true;
   }
+  if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
+    window.chrome.webview.postMessage(JSON.stringify(msg));
+    return true;
+  }
+  return false;
+}
+
+function postToApp(msg) {
+  if (__glyphDeliver(msg)) return;
+  __glyphPending.push(msg);
+  if (__glyphPending.length > 1) return;
+  let tries = 0;
+  const timer = setInterval(() => {
+    if (__glyphBridgeReady()) {
+      clearInterval(timer);
+      __glyphPending.splice(0).forEach(__glyphDeliver);
+    } else if (++tries > 100) {
+      clearInterval(timer);
+    }
+  }, 50);
 }
 
 function doSync() {
@@ -1088,7 +1188,14 @@ function attachEditing(md) {
   md.spellcheck = false;
   document.execCommand("defaultParagraphSeparator", false, "p");
 
-  md.addEventListener("input", () => {
+  // Chromium sometimes emits <span style="font-weight:700"> where WebKit emits
+  // <b>. Asking for tags rather than inline CSS keeps the serializer's job simple.
+  try { document.execCommand("styleWithCSS", false, false); } catch (e) {}
+
+  md.addEventListener("input", (e) => {
+    // Never rewrite the DOM mid-composition: with a CJK or accent IME the typing
+    // rules would inject nodes into a live composition and corrupt it.
+    if (e && e.isComposing) { scheduleSync(); return; }
     // Deferred so the browser's own editing operation finishes first;
     // running conversions re-entrantly makes them half-apply.
     setTimeout(() => { tryBlockRules() || tryInlineRules(); }, 0);
@@ -1096,7 +1203,7 @@ function attachEditing(md) {
   });
 
   md.addEventListener("keydown", (e) => {
-    if (e.metaKey && (e.key === "s" || e.key === "e")) { doSync(); return; }
+    if (MOD(e) && (e.key === "s" || e.key === "e")) { doSync(); return; }
     if (e.key === "Enter" && !e.shiftKey) {
       const blk = currentBlock();
       if (blk && /^H[1-6]$/.test(blk.tagName)) {
@@ -1139,13 +1246,14 @@ function attachEditing(md) {
 
   md.addEventListener("click", (e) => {
     const a = e.target.closest ? e.target.closest("a") : null;
-    if (a && e.metaKey) {
+    if (a && MOD(e)) {
       e.preventDefault();
       postToApp({ type: "openURL", url: a.href });
     }
   });
 
-  md.querySelectorAll("a").forEach((a) => { a.title = "⌘-click to open"; });
+  const modName = window.__glyphPlatform === "mac" ? "⌘" : "Ctrl";
+  md.querySelectorAll("a").forEach((a) => { a.title = modName + "-click to open"; });
 }
 
 window.renderMarkdown = function (src) {
