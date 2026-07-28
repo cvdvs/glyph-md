@@ -220,16 +220,26 @@ jobs:
           # console to attach to - so the selftest also writes a log, and that
           # is what CI reads. Without it the first Windows failure arrived with
           # no output whatsoever.
-          $code = 0
-          try { ./shell/build/glyph.exe --selftest } catch { $code = 1 }
-          if ($LASTEXITCODE) { $code = $LASTEXITCODE }
+          Remove-Item glyph-selftest.log -ErrorAction SilentlyContinue
+          # Start-Process -Wait, NOT the call operator. PowerShell does not wait
+          # for a GUI-subsystem process, so `& glyph.exe --selftest` returned
+          # instantly, $LASTEXITCODE held the PREVIOUS command's 0, and the job
+          # went green having tested nothing at all - a false pass, which is
+          # worse than a red one.
+          $p = Start-Process -FilePath "shell\build\glyph.exe" `
+                             -ArgumentList "--selftest" -Wait -PassThru
           if (Test-Path glyph-selftest.log) {
             Write-Host "--- selftest log ---"
             Get-Content glyph-selftest.log | Write-Host
           } else {
-            Write-Host "no glyph-selftest.log was written - the app died before it started"
+            throw "no glyph-selftest.log was written - the app died before it started"
           }
-          if ($code -ne 0) { throw "the Windows selftest failed (exit $code)" }
+          # The log must actually contain the verdict, so a truncated or empty
+          # run cannot pass either.
+          if (-not (Select-String -Path glyph-selftest.log -Pattern "selftest: all pass" -Quiet)) {
+            throw "the Windows selftest did not report success (exit $($p.ExitCode))"
+          }
+          if ($p.ExitCode -ne 0) { throw "the Windows selftest failed (exit $($p.ExitCode))" }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
