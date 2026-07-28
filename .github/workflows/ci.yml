@@ -58,7 +58,8 @@ jobs:
       - name: Check the raw editor's syntax highlighting
         run: |
           clang -fobjc-arc Scripts/highlight-smoke.m Sources/GlyphTheme.m \
-            Sources/GlyphHighlighter.m -o /tmp/highlight-smoke -framework Cocoa
+            Sources/GlyphHighlighter.m Sources/GlyphGutter.m \
+            -o /tmp/highlight-smoke -framework Cocoa
           /tmp/highlight-smoke Scripts/fixtures/highlight-cases.md
       - name: Assert markdown output has not drifted
         run: |

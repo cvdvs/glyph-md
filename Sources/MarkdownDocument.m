@@ -209,11 +209,9 @@ static NSColor *EditorTextColor(void) {
     self.scrollView.documentView = tv;
     // The ruler must be installed after documentView, or it attaches with a nil
     // clientView and draws an empty strip.
-    self.gutter = [[GlyphGutter alloc] initWithTextView:tv highlighter:self.highlighter];
-    self.scrollView.hasVerticalRuler = YES;
-    self.scrollView.hasHorizontalRuler = NO;
-    self.scrollView.verticalRulerView = self.gutter;
-    self.scrollView.rulersVisible = YES;
+    self.gutter = [[GlyphGutter alloc] initWithHighlighter:self.highlighter];
+    tv.gutter = self.gutter;
+    [tv syncGutterInset];
     [content addSubview:self.scrollView];
 
     // Word count
@@ -257,7 +255,15 @@ static NSColor *EditorTextColor(void) {
     [self.highlighter beginBulkReplace];
     self.textView.string = s ?: @"";
     [self.highlighter endBulkReplace];
-    [self.gutter refresh];
+    [self refreshGutter];
+}
+
+// Widen the left margin when the line count gains a digit, and repaint the numbers.
+- (void)refreshGutter {
+    if ([self.gutter updateWidth]) {
+        [(GlyphTextView *)self.textView syncGutterInset];
+    }
+    self.textView.needsDisplay = YES;
 }
 
 #pragma mark - Formatting bar
@@ -408,7 +414,7 @@ static NSColor *EditorTextColor(void) {
         // formatted view syncs text into this storage constantly, and highlighting
         // text nobody is looking at is pure cost.
         self.highlighter.enabled = YES;
-        [self.gutter refresh];
+        [self refreshGutter];
         self.webView.hidden = YES;
         self.scrollView.hidden = NO;
         [self.textView.window makeFirstResponder:self.textView];

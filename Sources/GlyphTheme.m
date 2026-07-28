@@ -1,4 +1,5 @@
 #import "GlyphTheme.h"
+#import "GlyphGutter.h"
 
 static NSColor *Dyn(uint32_t light, uint32_t dark) {
     return [NSColor colorWithName:nil dynamicProvider:^NSColor *(NSAppearance *ap) {
@@ -120,6 +121,29 @@ NSDictionary<NSAttributedStringKey, id> *GlyphBaseAttributes(void) {
 // highlighter recolors it in the same edit cycle.
 - (NSDictionary<NSAttributedStringKey, id> *)typingAttributes {
     return GlyphBaseAttributes();
+}
+
+// Runs before the glyphs are drawn, in this view's own coordinates, and scrolls
+// with the content automatically.
+- (void)drawViewBackgroundInRect:(NSRect)rect {
+    [super drawViewBackgroundInRect:rect];
+    [self.gutter drawInTextView:self dirtyRect:rect];
+}
+
+- (void)syncGutterInset {
+    if (!self.gutter) return;
+    CGFloat inset = self.gutter.width + 14;
+    if (fabs(self.textContainerInset.width - inset) > 0.5) {
+        self.textContainerInset = NSMakeSize(inset, self.textContainerInset.height);
+    }
+}
+
+// The caret line is highlighted, so the margin must repaint when it moves.
+- (void)setSelectedRanges:(NSArray<NSValue *> *)ranges
+             affinity:(NSSelectionAffinity)affinity
+       stillSelecting:(BOOL)stillSelectingFlag {
+    [super setSelectedRanges:ranges affinity:affinity stillSelecting:stillSelectingFlag];
+    if (self.gutter) self.needsDisplay = YES;
 }
 
 @end

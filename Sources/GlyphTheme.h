@@ -34,10 +34,16 @@ NSFont *GlyphMonoBoldFont(void);
 NSParagraphStyle *GlyphBaseParagraphStyle(void);
 NSDictionary<NSAttributedStringKey, id> *GlyphBaseAttributes(void);
 
-// An NSTextView that refuses to inherit color from the character before the
-// caret. Without this, typing after a colored token continues in that token's
-// color until the highlighter catches up — the single most visible defect.
+@class GlyphGutter;
+
+// An NSTextView that (a) refuses to inherit color from the character before the
+// caret — without this, typing after a colored token continues in that token's
+// color until the highlighter catches up — and (b) paints the line-number gutter
+// into its own left margin, so no extra view is needed.
 @interface GlyphTextView : NSTextView
+@property (nonatomic, strong, nullable) GlyphGutter *gutter;
+// Keeps the left inset wide enough for the numbers. Call after the line count changes.
+- (void)syncGutterInset;
 @end
 
 NS_ASSUME_NONNULL_END
