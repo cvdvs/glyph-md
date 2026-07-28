@@ -41,12 +41,54 @@ clang -fobjc-arc Scripts/set-default-md.m -o /tmp/glyph-default -framework Cocoa
 
 Requires macOS 13+. Uninstall by deleting `/Applications/Glyph.app`.
 
+### Windows and Linux
+
+There is a native build for both. It is the same editor — the interface is one
+shared file that all three builds render — wrapped in a small native shell that
+owns the window, the files and the dialogs.
+
+**Windows** needs the [Build Tools for Visual Studio](https://visualstudio.microsoft.com/downloads/)
+with the C++ workload, and Python 3:
+
+```powershell
+git clone https://github.com/cvdvs/glyph-md.git
+cd glyph-md
+./shell/build-portable.ps1
+```
+
+That produces `shell\build\glyph.exe`. The Microsoft Edge WebView2 runtime is
+already on Windows 11 and most Windows 10 machines; if it is missing, Glyph says
+so and links to it.
+
+**Linux** needs WebKitGTK:
+
+```bash
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+git clone https://github.com/cvdvs/glyph-md.git
+cd glyph-md
+./shell/build-portable.sh
+```
+
+That produces `shell/build/glyph`. A `.deb` is built in CI and attached to each
+run, and registers Glyph for markdown files.
+
+Either build can check itself:
+
+```bash
+./shell/build/glyph --selftest
+```
+
+It renders the real fixtures, runs the same three assertion suites the Mac app
+runs, and compares the markdown it writes back byte-for-byte against the
+expected output. See [docs/cross-platform.md](docs/cross-platform.md) for how
+the shell works and what is known not to work yet.
+
 ### Any other computer
 
-There is no native Windows or Linux build yet, but there is a **single HTML file**
-that runs the same editor in any browser: tabs, the formatting toolbar, open and
-save, raw markdown view, light and dark. Nothing to install, no server, no
-network — the whole app is one self-contained file.
+There is also a **single HTML file** that runs the same editor in any browser:
+tabs, the formatting toolbar, open and save, raw markdown view, light and dark.
+Nothing to install, no server, no network — the whole app is one self-contained
+file.
 
 Grab `glyph.html` from the [latest release](https://github.com/cvdvs/glyph-md/releases)
 and open it, or build it yourself:
