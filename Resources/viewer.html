@@ -479,6 +479,24 @@
   }
   .fm-empty { color: var(--faint); }
 
+  /* Shown when Glyph cannot rewrite this document exactly; the formatted view
+     goes read-only so the serializer can never touch the file. */
+  #glyph-protected {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    margin: 0 0 22px;
+    padding: 11px 15px;
+    border: 1px solid rgba(var(--co-warning-rgb), 0.45);
+    border-radius: 9px;
+    background: rgba(var(--co-warning-rgb), 0.1);
+    color: var(--fg);
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  #glyph-protected b { color: var(--co-warning); }
+  body.glyph-chrome #glyph-protected { top: 86px; }
+
   /* ---------- optional chrome (Windows/Linux/browser only) ----------
      Everything below is inert unless window.__glyphChrome is set, which the
      macOS app never does — there the tabs, toolbar and menus are native. */
@@ -1761,6 +1779,29 @@ window.renderMarkdown = function (src) {
 };
 
 // The whole markdown of the open document, frontmatter included.
+// Called by the app when a document does not survive a render/serialize cycle
+// intact. The formatted view is where the serializer writes, so switching it off
+// is what protects the file; the raw view (Cmd-E) writes the text literally and
+// stays available.
+window.glyphSetProtected = function (on, detail) {
+  const md = document.getElementById("md");
+  const content = document.getElementById("content");
+  if (!md || !content) return;
+  const existing = document.getElementById("glyph-protected");
+  if (existing) existing.remove();
+  md.contentEditable = on ? "false" : "true";
+  if (!on) return;
+  const note = document.createElement("div");
+  note.id = "glyph-protected";
+  note.setAttribute("contenteditable", "false");
+  note.innerHTML = "<b>Read-only — protecting this file.</b> Glyph cannot rewrite "
+    + "this document exactly as it was written"
+    + (detail ? " (" + detail + ")" : "")
+    + ", so editing here is switched off rather than risk changing it. "
+    + "Press \u2318E for the raw markdown, which edits and saves the text exactly.";
+  content.insertBefore(note, content.firstChild);
+};
+
 window.glyphGetText = function () {
   return curPrefix + serializeDoc();
 };

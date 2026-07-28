@@ -25,6 +25,46 @@ static NSColor *EditorTextColor(void) {
     return DynamicColor(0.149, 0.153, 0.169, 0.847, 0.855, 0.871); // #26272b / #d8dade
 }
 
+// Does the serialized form still contain every word the author wrote?
+//
+// Deliberately insensitive to formatting: bullet markers, blank lines, and a
+// bare URL becoming a markdown link all leave the words intact, and firing on
+// those would make the app useless. It fires when words go MISSING — an HTML
+// comment dropped, a block unwrapped, a construct the serializer cannot express
+// — which is exactly the case where writing back would damage the file.
+static NSCountedSet *GlyphWordBag(NSString *text) {
+    NSCountedSet *bag = [NSCountedSet set];
+    if (!text.length) return bag;
+    // Entity references are decoded during rendering, so "&nbsp;" legitimately
+    // stops being the word "nbsp". Remove them from both sides before counting.
+    static NSRegularExpression *entity;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        entity = [NSRegularExpression regularExpressionWithPattern:@"&(#[0-9a-fA-F]+|[a-zA-Z]+);"
+                                                           options:0 error:NULL];
+    });
+    NSString *flat = [entity stringByReplacingMatchesInString:text options:0
+                                                        range:NSMakeRange(0, text.length)
+                                                 withTemplate:@" "];
+    NSCharacterSet *word = [NSCharacterSet alphanumericCharacterSet];
+    NSScanner *scanner = [NSScanner scannerWithString:flat.lowercaseString];
+    scanner.charactersToBeSkipped = word.invertedSet;
+    NSString *token = nil;
+    while ([scanner scanCharactersFromSet:word intoString:&token]) {
+        if (token.length >= 3) [bag addObject:token];
+    }
+    return bag;
+}
+
+static BOOL GlyphRoundTripPreservesContent(NSString *original, NSString *serialized) {
+    NSCountedSet *before = GlyphWordBag(original);
+    NSCountedSet *after = GlyphWordBag(serialized);
+    for (NSString *w in before) {
+        if ([after countForObject:w] < [before countForObject:w]) return NO;
+    }
+    return YES;
+}
+
 // A document is untrusted input, so a link inside one must never be able to hand
 // the system an arbitrary URL. NSWorkspace happily launches other applications
 // via custom schemes and can act on file:// paths; only ordinary web and mail
@@ -71,6 +111,8 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
 @property (nonatomic, assign) BOOL editing;
 @property (nonatomic, assign) BOOL pageReady;
 @property (nonatomic, strong) NSURL *expectedURL;   // the one load we permit
+@property (nonatomic, assign) BOOL roundTripChecked;
+@property (nonatomic, assign) BOOL roundTripSafe;
 @end
 
 @implementation MarkdownDocument
@@ -794,6 +836,10 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
     NSString *type = body[@"type"];
     if ([type isEqualToString:@"source"]) {
         // The live preview serialized itself back to markdown after an edit.
+        // Refused outright for a protected document: the page is read-only there,
+        // so anything arriving is a bug or a bypass, and accepting it would write
+        // the lossy serialization into the user's file.
+        if (self.roundTripChecked && !self.roundTripSafe) return;
         NSString *text = [body[@"text"] isKindOfClass:[NSString class]] ? body[@"text"] : nil;
         if (text) [self applySourceEdit:text];
     } else if ([type isEqualToString:@"openURL"]) {
@@ -881,6 +927,31 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     self.pageReady = YES;
     [self renderMarkdown];
+    [self verifyRoundTrip];
+}
+
+// Ask the page what this document would be written back as, and compare. If any
+// of the author's words would be lost, the formatted view goes read-only so the
+// serializer can never reach the file. The raw view still edits it exactly.
+- (void)verifyRoundTrip {
+    if (self.roundTripChecked || !self.fileURL) return;
+    NSString *original = self.text ?: @"";
+    if (original.length == 0) { self.roundTripChecked = YES; self.roundTripSafe = YES; return; }
+    __weak MarkdownDocument *weakSelf = self;
+    [self.webView evaluateJavaScript:@"window.glyphGetText ? window.glyphGetText() : null"
+                   completionHandler:^(id result, NSError *error) {
+        MarkdownDocument *self2 = weakSelf;
+        if (!self2 || self2.roundTripChecked) return;
+        self2.roundTripChecked = YES;
+        NSString *serialized = [result isKindOfClass:[NSString class]] ? result : nil;
+        // If the page could not tell us, assume the worst and protect the file.
+        BOOL safe = serialized && GlyphRoundTripPreservesContent(original, serialized);
+        self2.roundTripSafe = safe;
+        if (safe) return;
+        [self2.webView evaluateJavaScript:
+            @"window.glyphSetProtected && window.glyphSetProtected(true, 'some of its formatting')"
+                        completionHandler:nil];
+    }];
 }
 
 // Clicked links open in the system default app (browser for web links),
