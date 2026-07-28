@@ -677,6 +677,50 @@ static void run_selftest_stage() {
   webview_eval(g.w, js.c_str());
 }
 
+// -------------------------------------------------------- platform tidying
+
+#if defined(_WIN32)
+// The binary is a GUI subsystem app, so no console window trails the user
+// around. --selftest still has to be readable, and in CI the log IS the only
+// debugger, so it borrows the console that launched it.
+static void attach_parent_console() {
+  if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+  FILE *f = nullptr;
+  freopen_s(&f, "CONOUT$", "w", stdout);
+  freopen_s(&f, "CONOUT$", "w", stderr);
+}
+
+// Settings that have to be off in a document editor.
+//
+// AreBrowserAcceleratorKeysEnabled is the one that matters: with it on, Ctrl+R
+// reloads the page. In a browser that is harmless; here it throws away every
+// unsaved edit in every tab, silently, on a keystroke people press by reflex.
+// Ctrl+P, Ctrl+F and Ctrl+- likewise belong to the document, not to the engine.
+static void tame_webview2(webview_t w) {
+  auto *controller = static_cast<ICoreWebView2Controller *>(
+      webview_get_native_handle(w, WEBVIEW_NATIVE_HANDLE_KIND_BROWSER_CONTROLLER));
+  if (!controller) return;
+  ICoreWebView2 *core = nullptr;
+  if (FAILED(controller->get_CoreWebView2(&core)) || !core) return;
+  ICoreWebView2Settings *settings = nullptr;
+  if (SUCCEEDED(core->get_Settings(&settings)) && settings) {
+    settings->put_AreDefaultContextMenusEnabled(FALSE);
+    settings->put_IsZoomControlEnabled(FALSE);
+    settings->put_IsStatusBarEnabled(FALSE);
+    settings->put_AreDevToolsEnabled(FALSE);
+    // Only on newer runtimes; an older one simply keeps the browser keys, which
+    // is a worse editor but not a broken one.
+    ICoreWebView2Settings3 *s3 = nullptr;
+    if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s3))) && s3) {
+      s3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+      s3->Release();
+    }
+    settings->Release();
+  }
+  core->Release();
+}
+#endif
+
 // ------------------------------------------------------------------- startup
 
 static std::string compose_page(const std::string &initial_name,
@@ -705,6 +749,15 @@ static std::string compose_page(const std::string &initial_name,
 }
 
 int main(int argc, char **argv) {
+#if defined(_WIN32)
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--selftest") == 0 ||
+        std::strcmp(argv[i], "--version") == 0) {
+      attach_parent_console();
+      break;
+    }
+  }
+#endif
 #if !defined(_WIN32) && !defined(__APPLE__)
   gtk_init_check(&argc, &argv);
 #endif
@@ -754,6 +807,9 @@ int main(int argc, char **argv) {
   webview_set_title(g.w, "Glyph");
   webview_set_size(g.w, 1000, 800, WEBVIEW_HINT_NONE);
   webview_bind(g.w, "__glyphNative", on_page_message, nullptr);
+#if defined(_WIN32)
+  tame_webview2(g.w);
+#endif
   webview_navigate(g.w, file_url(g.page_path, false).c_str());
 
   if (g.selftest) std::printf("glyph selftest (" GLYPH_PLATFORM ")\n");
