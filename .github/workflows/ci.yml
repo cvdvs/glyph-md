@@ -31,6 +31,8 @@ jobs:
           exit 1
       - name: Smoke test + screenshots
         run: node Scripts/engine-smoke.mjs --shots artifacts/blink
+      - name: Smoke test the standalone app build
+        run: node Scripts/engine-smoke.mjs --with-chrome
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,18 +87,21 @@ jobs:
 
   # The standalone page: one HTML file that renders and edits markdown in any
   # browser, on any OS. No build, nothing to install — useful on its own.
-  viewer:
-    name: Standalone viewer page
+  # One self-contained HTML file that runs Glyph in any browser on any OS:
+  # tabs, toolbar, open/save, raw view. No install, nothing to build.
+  app:
+    name: Standalone app page
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Build glyph-viewer.html
+      - name: Build glyph.html
         run: |
           mkdir -p artifacts
-          python3 Scripts/make-preview.py sample.md artifacts/glyph-viewer.html
+          python3 Scripts/make-preview.py sample.md artifacts/glyph.html --chrome
+          python3 Scripts/make-preview.py sample.md artifacts/glyph-readonly.html
           ls -la artifacts/
       - uses: actions/upload-artifact@v4
         with:
-          name: glyph-viewer-html
-          path: artifacts/glyph-viewer.html
+          name: glyph-standalone-html
+          path: artifacts/*.html

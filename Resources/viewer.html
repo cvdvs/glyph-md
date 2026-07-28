@@ -97,6 +97,100 @@
     }
   }
 
+
+  /* Explicit override for the in-page theme switch; the media query above
+     remains the 'system' default. Generated from the two blocks above. */
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --fg: #26272b;
+    --fg-rgb: 38, 39, 43;
+    --muted: #75797f;
+    --faint: #a9adb3;
+    --accent: #6944ff;
+    --accent-rgb: 105, 68, 255;
+    --accent-soft: rgba(105, 68, 255, 0.08);
+    --border: #e8e8ec;
+    --border-strong: #d2d2d8;
+    --code-bg: #f4f4f7;
+    --pre-bg: #f8f8fa;
+    --pre-border: #ececf1;
+    --hl: rgba(255, 208, 0, 0.35);
+    --h1: #d23b71;
+    --h2: #ae761b;
+    --h3: #178d99;
+    --h4: #7a4fd0;
+    --link: #c62f6d;
+    --link-rgb: 198, 47, 109;
+    --quote: #6d5fb0;
+    --quote-rgb: 109, 95, 176;
+    --tc0: #c62f6d;
+    --tc0-rgb: 198, 47, 109;
+    --tc1: #9c6a12;
+    --tc1-rgb: 156, 106, 18;
+    --tc2: #127f8b;
+    --tc2-rgb: 18, 127, 139;
+    --tc3: #3d8f52;
+    --tc3-rgb: 61, 143, 82;
+    --tc4: #7a4fd0;
+    --tc4-rgb: 122, 79, 208;
+    --tc5: #2e6cc9;
+    --tc5-rgb: 46, 108, 201;
+    --co-note: #4a8cff;
+    --co-note-rgb: 74, 140, 255;
+    --co-tip: #2fb8a5;
+    --co-tip-rgb: 47, 184, 165;
+    --co-warning: #e6a23c;
+    --co-warning-rgb: 230, 162, 60;
+    --co-danger: #f75c5c;
+    --co-danger-rgb: 247, 92, 92;
+    --co-success: #4fbb6b;
+    --co-success-rgb: 79, 187, 107;
+    --co-question: #dfae3d;
+    --co-question-rgb: 223, 174, 61;
+    --co-quote: #9aa0a8;
+    --co-quote-rgb: 154, 160, 168;
+    --co-example: #a06bff;
+    --co-example-rgb: 160, 107, 255;
+    --co-important: #3fb2d4;
+    --co-important-rgb: 63, 178, 212;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1e1e26;
+    --fg: #d8dade;
+    --fg-rgb: 216, 218, 222;
+    --muted: #9094a0;
+    --faint: #5f6370;
+    --accent: #9c8bff;
+    --accent-rgb: 156, 139, 255;
+    --accent-soft: rgba(156, 139, 255, 0.13);
+    --border: #32323c;
+    --border-strong: #474752;
+    --code-bg: #2a2a34;
+    --pre-bg: #24242c;
+    --pre-border: #30303a;
+    --hl: rgba(255, 208, 0, 0.25);
+    --h1: #ef5d8d;
+    --h2: #e5ad4c;
+    --h3: #54bec4;
+    --h4: #b48bf2;
+    --link: #ee6d95;
+    --link-rgb: 238, 109, 149;
+    --quote: #a99bd6;
+    --quote-rgb: 169, 155, 214;
+    --tc0: #ef6a92;
+    --tc0-rgb: 239, 106, 146;
+    --tc1: #e5ad4c;
+    --tc1-rgb: 229, 173, 76;
+    --tc2: #54bec4;
+    --tc2-rgb: 84, 190, 196;
+    --tc3: #7cbf72;
+    --tc3-rgb: 124, 191, 114;
+    --tc4: #b48bf2;
+    --tc4-rgb: 180, 139, 242;
+    --tc5: #6ea6f5;
+    --tc5-rgb: 110, 166, 245;
+  }
+
   * { box-sizing: border-box; }
 
   html, body {
@@ -372,6 +466,140 @@
     color: var(--fg);
   }
   .fm-empty { color: var(--faint); }
+
+  /* ---------- optional chrome (Windows/Linux/browser only) ----------
+     Everything below is inert unless window.__glyphChrome is set, which the
+     macOS app never does — there the tabs, toolbar and menus are native. */
+  body.glyph-chrome { padding-top: 86px; }
+  body.glyph-chrome #content { padding-top: 20px; }
+
+  #glyph-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 20;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #glyph-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 1px;
+    height: 38px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: rgba(var(--fg-rgb), 0.04);
+  }
+  #glyph-tabs::-webkit-scrollbar { display: none; }
+  .glyph-tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px 0 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 220px;
+  }
+  .glyph-tab[aria-selected="true"] { background: var(--bg); color: var(--fg); }
+  .glyph-tab .name { overflow: hidden; text-overflow: ellipsis; }
+  .glyph-tab .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    flex: none;
+    opacity: 0;
+  }
+  .glyph-tab.dirty .dot { opacity: 1; }
+  .glyph-tab .x {
+    width: 16px; height: 16px; line-height: 15px;
+    border-radius: 4px; text-align: center;
+    font-size: 13px; color: var(--faint); flex: none;
+  }
+  .glyph-tab .x:hover { background: rgba(var(--fg-rgb), 0.12); color: var(--fg); }
+  #glyph-newtab {
+    border: none; background: transparent; color: var(--faint);
+    font-size: 17px; width: 34px; cursor: pointer; flex: none;
+  }
+  #glyph-newtab:hover { color: var(--fg); }
+
+  #glyph-tools {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 47px;
+    padding: 0 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #glyph-tools::-webkit-scrollbar { display: none; }
+  .glyph-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px; height: 30px;
+    padding: 0 7px;
+    border: none; border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font: 600 12.5px -apple-system, system-ui, "Segoe UI", sans-serif;
+    cursor: pointer;
+  }
+  .glyph-btn:hover { background: rgba(var(--fg-rgb), 0.1); color: var(--fg); }
+  .glyph-btn svg { width: 16px; height: 16px; }
+  .glyph-sep { width: 1px; height: 20px; background: var(--border); margin: 0 6px; flex: none; }
+
+  #glyph-status {
+    position: fixed;
+    right: 14px; bottom: 10px;
+    z-index: 20;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    pointer-events: none;
+  }
+
+  #glyph-raw {
+    display: none;
+    position: fixed;
+    top: 86px; left: 0; right: 0; bottom: 0;
+    z-index: 15;
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    resize: none;
+    padding: 22px 26px 60px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Code", Consolas,
+      "DejaVu Sans Mono", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    tab-size: 4;
+  }
+  body.glyph-raw #glyph-raw { display: block; }
+  body.glyph-raw #content { visibility: hidden; }
+
+  #glyph-drop {
+    position: fixed; inset: 0; z-index: 40;
+    display: none;
+    align-items: center; justify-content: center;
+    background: rgba(var(--accent-rgb), 0.12);
+    border: 3px dashed rgba(var(--accent-rgb), 0.5);
+    color: var(--accent);
+    font: 600 15px -apple-system, system-ui, sans-serif;
+  }
+  body.glyph-dropping #glyph-drop { display: flex; }
 </style>
 </head>
 <body>
@@ -872,6 +1100,8 @@ function __glyphDeliver(msg) {
 
 function postToApp(msg) {
   if (__glyphDeliver(msg)) return;
+  // Running as a standalone page: the chrome layer is the shell.
+  if (window.__glyphLocalSink) { window.__glyphLocalSink(msg); return; }
   __glyphPending.push(msg);
   if (__glyphPending.length > 1) return;
   let tries = 0;
@@ -1281,8 +1511,425 @@ window.renderMarkdown = function (src) {
   window.scrollTo(0, y);
 };
 
+// The whole markdown of the open document, frontmatter included.
+window.glyphGetText = function () {
+  return curPrefix + serializeDoc();
+};
+
+/* ================= optional chrome =================
+   Tabs, toolbar, open/save, word count, theme and a raw view — everything the
+   macOS app gets from AppKit. Runs ONLY when window.__glyphChrome is set, so on
+   macOS not one element is created and not one listener is bound. */
+window.__glyphInstallChrome = function () {
+  const MODNAME = window.__glyphPlatform === "mac" ? "⌘" : "Ctrl";
+  const svg = (d) =>
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+    + ' stroke-linecap="round" stroke-linejoin="round">' + d + "</svg>";
+
+  const ICON = {
+    undo: svg('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>'),
+    redo: svg('<path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/>'),
+    bold: svg('<path d="M6 4h8a4 4 0 0 1 0 8H6z"/><path d="M6 12h9a4 4 0 0 1 0 8H6z"/>'),
+    italic: svg('<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>'),
+    underline: svg('<path d="M6 3v7a6 6 0 0 0 12 0V3"/><line x1="4" y1="21" x2="20" y2="21"/>'),
+    strike: svg('<path d="M16 4H9a3 3 0 0 0-2.83 4"/><path d="M14 12a4 4 0 0 1 0 8H6"/><line x1="4" y1="12" x2="20" y2="12"/>'),
+    highlight: svg('<path d="M9 11l-6 6v3h9l3-3"/><path d="M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-4.2-4.2a2 2 0 0 1 0-2.8L15 5"/>'),
+    code: svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
+    link: svg('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'),
+    image: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>'),
+    bullets: svg('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'),
+    checklist: svg('<polyline points="3 7 5 9 9 5"/><polyline points="3 17 5 19 9 15"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="17" x2="21" y2="17"/>'),
+    quote: svg('<path d="M10 11H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6a4 4 0 0 1-4 4"/><path d="M20 11h-4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6a4 4 0 0 1-4 4"/>'),
+    callout: svg('<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>'),
+    table: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/>'),
+    codeblock: svg('<path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1"/><path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1"/>'),
+    eraser: svg('<path d="M20 20H7L3 16a2 2 0 0 1 0-2.8l9-9a2 2 0 0 1 2.8 0l6 6a2 2 0 0 1 0 2.8L13 20"/>'),
+    open: svg('<path d="M4 20h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7L11 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/>'),
+    save: svg('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
+    raw: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
+    theme: svg('<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/>'),
+  };
+
+  /* ---------- documents ---------- */
+  let docs = [];
+  let activeId = null;
+  let nextId = 1;
+
+  const active = () => docs.find((d) => d.id === activeId) || null;
+
+  // Edits arrive here instead of a native shell.
+  window.__glyphLocalSink = function (msg) {
+    if (!msg || msg.type !== "source") return;
+    const d = active();
+    if (!d) return;
+    if (d.text !== msg.text) {
+      d.text = msg.text;
+      d.dirty = true;
+      paintTabs();
+    }
+    paintStatus();
+  };
+
+  function captureActive() {
+    const d = active();
+    if (!d) return;
+    if (document.body.classList.contains("glyph-raw")) {
+      d.text = rawArea.value;
+    } else {
+      const now = window.glyphGetText();
+      if (now !== d.text) { d.text = now; d.dirty = true; }
+    }
+    d.scrollY = window.scrollY;
+  }
+
+  function openDoc(name, text, handle) {
+    const d = { id: nextId++, name: name || "Untitled.md", text: text || "",
+                dirty: false, handle: handle || null, scrollY: 0 };
+    docs.push(d);
+    activate(d.id);
+    return d;
+  }
+
+  function activate(id) {
+    if (activeId === id) return;
+    if (activeId != null) captureActive();
+    activeId = id;
+    const d = active();
+    if (!d) return;
+    window.renderMarkdown(d.text);
+    if (document.body.classList.contains("glyph-raw")) rawArea.value = d.text;
+    paintTabs();
+    paintStatus();
+    document.title = d.name + " — Glyph";
+    window.scrollTo(0, d.scrollY || 0);
+  }
+
+  function closeDoc(id) {
+    const i = docs.findIndex((d) => d.id === id);
+    if (i < 0) return;
+    const d = docs[i];
+    if (d.dirty && !confirm('"' + d.name + '" has unsaved changes. Close it anyway?')) return;
+    docs.splice(i, 1);
+    if (activeId === id) {
+      activeId = null;
+      if (docs.length) activate(docs[Math.min(i, docs.length - 1)].id);
+      else openDoc("Untitled.md", "");
+    }
+    paintTabs();
+  }
+
+  /* ---------- files ---------- */
+  const canPick = typeof window.showOpenFilePicker === "function";
+  const MD_TYPES = [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown", ".mdown", ".mkd"] } }];
+
+  async function doOpen() {
+    if (canPick) {
+      try {
+        const handles = await window.showOpenFilePicker({ multiple: true, types: MD_TYPES });
+        for (const h of handles) {
+          const f = await h.getFile();
+          openDoc(f.name, await f.text(), h);
+        }
+      } catch (e) { /* user cancelled */ }
+      return;
+    }
+    fileInput.click();
+  }
+
+  async function doSave() {
+    captureActive();
+    const d = active();
+    if (!d) return;
+    if (canPick) {
+      try {
+        let h = d.handle;
+        if (!h) {
+          h = await window.showSaveFilePicker({ suggestedName: d.name, types: MD_TYPES });
+          d.handle = h;
+          d.name = h.name || d.name;
+        }
+        const w = await h.createWritable();
+        await w.write(d.text);
+        await w.close();
+        d.dirty = false;
+        paintTabs();
+        flash("Saved");
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") return;
+      }
+    }
+    // Browsers without the file-system API can still download the file.
+    const blob = new Blob([d.text], { type: "text/markdown" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = d.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    d.dirty = false;
+    paintTabs();
+    flash("Downloaded");
+  }
+
+  async function loadFiles(fileList) {
+    for (const f of fileList) {
+      if (!/\.(md|markdown|mdown|mkd|txt)$/i.test(f.name)) continue;
+      openDoc(f.name, await f.text(), null);
+    }
+  }
+
+  /* ---------- images ---------- */
+  // No shell to copy a picture next to the note, so the image is embedded in the
+  // document itself. That keeps the file self-contained and portable.
+  function insertImageFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => window.glyphInsertImage(String(reader.result));
+    reader.readAsDataURL(file);
+  }
+
+  /* ---------- chrome ---------- */
+  const bar = document.createElement("div");
+  bar.id = "glyph-bar";
+  const tabsEl = document.createElement("div");
+  tabsEl.id = "glyph-tabs";
+  const toolsEl = document.createElement("div");
+  toolsEl.id = "glyph-tools";
+  bar.appendChild(tabsEl);
+  bar.appendChild(toolsEl);
+  document.body.appendChild(bar);
+  document.body.classList.add("glyph-chrome");
+
+  const rawArea = document.createElement("textarea");
+  rawArea.id = "glyph-raw";
+  rawArea.spellcheck = false;
+  document.body.appendChild(rawArea);
+
+  const status = document.createElement("div");
+  status.id = "glyph-status";
+  document.body.appendChild(status);
+
+  const drop = document.createElement("div");
+  drop.id = "glyph-drop";
+  drop.textContent = "Drop markdown files to open";
+  document.body.appendChild(drop);
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.multiple = true;
+  fileInput.accept = ".md,.markdown,.mdown,.mkd,.txt";
+  fileInput.style.display = "none";
+  fileInput.addEventListener("change", () => { loadFiles(fileInput.files); fileInput.value = ""; });
+  document.body.appendChild(fileInput);
+
+  const imgInput = document.createElement("input");
+  imgInput.type = "file";
+  imgInput.accept = "image/*";
+  imgInput.style.display = "none";
+  imgInput.addEventListener("change", () => {
+    if (imgInput.files[0]) insertImageFile(imgInput.files[0]);
+    imgInput.value = "";
+  });
+  document.body.appendChild(imgInput);
+
+  function paintTabs() {
+    tabsEl.replaceChildren();
+    docs.forEach((d) => {
+      const t = document.createElement("button");
+      t.className = "glyph-tab" + (d.dirty ? " dirty" : "");
+      t.setAttribute("aria-selected", d.id === activeId ? "true" : "false");
+      t.innerHTML = '<span class="dot"></span><span class="name"></span><span class="x">×</span>';
+      t.querySelector(".name").textContent = d.name;
+      t.addEventListener("click", (e) => {
+        if (e.target.classList.contains("x")) { e.stopPropagation(); closeDoc(d.id); }
+        else activate(d.id);
+      });
+      tabsEl.appendChild(t);
+    });
+    const plus = document.createElement("button");
+    plus.id = "glyph-newtab";
+    plus.textContent = "+";
+    plus.title = "New note (" + MODNAME + "N)";
+    plus.addEventListener("click", () => openDoc("Untitled.md", ""));
+    tabsEl.appendChild(plus);
+  }
+
+  function btn(icon, title, fn) {
+    const b = document.createElement("button");
+    b.className = "glyph-btn";
+    b.innerHTML = ICON[icon] || "";
+    b.title = title;
+    b.addEventListener("mousedown", (e) => e.preventDefault());  // keep the selection
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function textBtn(label, title, fn) {
+    const b = btn(null, title, fn);
+    b.textContent = label;
+    return b;
+  }
+  function sep() {
+    const s = document.createElement("span");
+    s.className = "glyph-sep";
+    return s;
+  }
+
+  const T = (cmd) => () => window.glyphToolbar(cmd);
+  [
+    btn("undo", "Undo (" + MODNAME + "Z)", T("undo")),
+    btn("redo", "Redo (⇧" + MODNAME + "Z)", T("redo")),
+    sep(),
+    textBtn("H1", "Heading 1 (" + MODNAME + "1)", T("h1")),
+    textBtn("H2", "Heading 2 (" + MODNAME + "2)", T("h2")),
+    textBtn("H3", "Heading 3 (" + MODNAME + "3)", T("h3")),
+    sep(),
+    btn("bold", "Bold (" + MODNAME + "B)", T("bold")),
+    btn("italic", "Italic (" + MODNAME + "I)", T("italic")),
+    btn("underline", "Underline (" + MODNAME + "U)", T("underline")),
+    btn("strike", "Strikethrough", T("strike")),
+    btn("highlight", "Highlight", T("highlight")),
+    btn("code", "Inline code", T("code")),
+    sep(),
+    btn("link", "Link (" + MODNAME + "K)", T("link")),
+    btn("image", "Insert picture", () => imgInput.click()),
+    sep(),
+    btn("bullets", "Bullet list", T("bullets")),
+    btn("checklist", "Checklist", T("checklist")),
+    btn("quote", "Quote", T("quote")),
+    btn("callout", "Callout", T("callout")),
+    btn("table", "Table", T("table")),
+    btn("codeblock", "Code block", T("codeblock")),
+    btn("eraser", "Clear formatting", T("eraser")),
+    sep(),
+    btn("open", "Open (" + MODNAME + "O)", doOpen),
+    btn("save", "Save (" + MODNAME + "S)", doSave),
+    btn("raw", "Raw markdown (" + MODNAME + "E)", toggleRaw),
+    btn("theme", "Light / dark / system", cycleTheme),
+  ].forEach((el) => toolsEl.appendChild(el));
+
+  /* ---------- raw view ---------- */
+  function toggleRaw() {
+    const on = document.body.classList.toggle("glyph-raw");
+    const d = active();
+    if (!d) return;
+    if (on) {
+      d.text = window.glyphGetText();
+      rawArea.value = d.text;
+      rawArea.focus();
+    } else {
+      d.text = rawArea.value;
+      d.dirty = true;
+      window.renderMarkdown(d.text);
+      paintTabs();
+    }
+    paintStatus();
+  }
+  rawArea.addEventListener("input", () => {
+    const d = active();
+    if (!d) return;
+    d.text = rawArea.value;
+    d.dirty = true;
+    paintTabs();
+    paintStatus();
+  });
+
+  /* ---------- theme ---------- */
+  const THEMES = ["system", "light", "dark"];
+  let themeIndex = 0;
+  function cycleTheme() {
+    themeIndex = (themeIndex + 1) % THEMES.length;
+    const mode = THEMES[themeIndex];
+    if (mode === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+    flash("Theme: " + mode);
+  }
+  window.glyphSetTheme = function (mode) {
+    themeIndex = Math.max(0, THEMES.indexOf(mode));
+    if (mode === "system" || !mode) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", mode);
+  };
+
+  /* ---------- status ---------- */
+  let flashTimer = null;
+  function paintStatus(msg) {
+    if (msg) {
+      status.textContent = msg;
+      return;
+    }
+    const d = active();
+    const text = d ? d.text : "";
+    const words = (text.match(/\S+/g) || []).length;
+    status.textContent = words.toLocaleString() + " words";
+  }
+  function flash(msg) {
+    paintStatus(msg);
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => paintStatus(), 1600);
+  }
+
+  /* ---------- keyboard ---------- */
+  document.addEventListener("keydown", (e) => {
+    const mod = window.__glyphPlatform === "mac" ? e.metaKey : e.ctrlKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    const map = {
+      b: "bold", i: "italic", u: "underline", k: "link",
+      1: "h1", 2: "h2", 3: "h3",
+    };
+    if (k === "s") { e.preventDefault(); doSave(); return; }
+    if (k === "o") { e.preventDefault(); doOpen(); return; }
+    if (k === "n") { e.preventDefault(); openDoc("Untitled.md", ""); return; }
+    if (k === "e") { e.preventDefault(); toggleRaw(); return; }
+    if (k === "w") { e.preventDefault(); if (activeId != null) closeDoc(activeId); return; }
+    if (e.shiftKey && k === "x") { e.preventDefault(); window.glyphToolbar("strike"); return; }
+    if (e.shiftKey && k === "h") { e.preventDefault(); window.glyphToolbar("highlight"); return; }
+    if (e.shiftKey && k === "l") { e.preventDefault(); window.glyphToolbar("checklist"); return; }
+    if (e.shiftKey && k === "8") { e.preventDefault(); window.glyphToolbar("bullets"); return; }
+    if (!e.shiftKey && map[k]) { e.preventDefault(); window.glyphToolbar(map[k]); }
+  });
+
+  /* ---------- drag and drop ---------- */
+  let dragDepth = 0;
+  window.addEventListener("dragenter", (e) => {
+    if (!e.dataTransfer || !e.dataTransfer.types.includes("Files")) return;
+    dragDepth++;
+    document.body.classList.add("glyph-dropping");
+  });
+  window.addEventListener("dragleave", () => {
+    if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("glyph-dropping"); }
+  });
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove("glyph-dropping");
+    const files = [...(e.dataTransfer.files || [])];
+    const img = files.find((f) => /^image\//.test(f.type));
+    if (img && !files.some((f) => /\.md$/i.test(f.name))) { insertImageFile(img); return; }
+    loadFiles(files);
+  });
+
+  window.addEventListener("beforeunload", (e) => {
+    captureActive();
+    if (docs.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  // The page starts holding whatever document was embedded in it.
+  window.__glyphChromeReady = function (name, text) {
+    openDoc(name || "Untitled.md", text || "");
+    paintTabs();
+    paintStatus();
+  };
+};
+
 /*__INITIAL__*/
-if (typeof window.__initial === "string") window.renderMarkdown(window.__initial);
+// The chrome flag is set by the block above, so installation happens here rather
+// than where the module is defined.
+if (window.__glyphChrome) {
+  window.__glyphInstallChrome();
+  window.__glyphChromeReady(window.__initialName, window.__initial);
+} else if (typeof window.__initial === "string") {
+  window.renderMarkdown(window.__initial);
+}
 </script>
 </body>
 </html>

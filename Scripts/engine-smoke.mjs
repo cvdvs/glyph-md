@@ -4,7 +4,7 @@
 // Deliberately has NO dependencies: it drives the Chrome DevTools Protocol over
 // Node's built-in WebSocket (Node 22+). Nothing enters the repo, nothing to install.
 //
-//   node Scripts/engine-smoke.mjs [--shots <dir>] [--chrome <path>]
+//   node Scripts/engine-smoke.mjs [--shots <dir>] [--chrome <path>] [--with-chrome]
 //
 // Exits nonzero if any assertion fails or the serialization drifts from
 // Scripts/fixtures/golden-sample.md (regenerate that with --update-golden).
@@ -50,9 +50,15 @@ const docPath = existsSync(path.join(fixtureDir, "selftest.md"))
   : path.join(ROOT, "sample.md");
 const doc = readFileSync(docPath, "utf8");
 
+// --chrome is the browser path; --with-chrome selects the standalone-app build.
+const chromeMode = has("--with-chrome");
+let initial = "window.__initial = " + JSON.stringify(doc) + ";";
+if (chromeMode) {
+  initial = 'window.__glyphChrome = true;\nwindow.__initialName = "selftest.md";\n' + initial;
+}
 const page = viewer
   .replace("/*__MARKED_JS__*/", () => marked)
-  .replace("/*__INITIAL__*/", () => "window.__initial = " + JSON.stringify(doc) + ";");
+  .replace("/*__INITIAL__*/", () => initial);
 
 // Written into the fixtures dir so relative image paths (pic.png) resolve,
 // which is what the imageResolves assertion depends on.
@@ -177,6 +183,36 @@ if (exceptionDetails) {
 }
 
 const out = JSON.parse(result.value);
+
+// The standalone page must also carry the chrome: tabs, toolbar, status, and a
+// working raw view. Without this the release artifact could quietly lose them.
+if (chromeMode) {
+  const { result: cr } = await S("Runtime.evaluate", {
+    expression: `(function(){
+      const r = {};
+      r.chromeBar = !!document.getElementById("glyph-bar");
+      r.tabs = document.querySelectorAll(".glyph-tab").length;
+      r.toolButtons = document.querySelectorAll(".glyph-btn").length;
+      r.status = !!document.getElementById("glyph-status");
+      r.rawArea = !!document.getElementById("glyph-raw");
+      r.getText = typeof window.glyphGetText === "function"
+        && window.glyphGetText().length > 0;
+      const rawBtn = document.querySelector('[title^="Raw markdown"]');
+      if (rawBtn) {
+        rawBtn.click();
+        r.rawOpens = getComputedStyle(document.getElementById("glyph-raw")).display !== "none";
+        r.rawHasSource = document.getElementById("glyph-raw").value.indexOf("#") >= 0;
+        rawBtn.click();
+        r.rawCloses = !document.body.classList.contains("glyph-raw");
+      }
+      document.getElementById("glyph-newtab").click();
+      r.newTabOpens = document.querySelectorAll(".glyph-tab").length === 2;
+      return JSON.stringify(r);
+    })()`,
+    returnByValue: true,
+  });
+  Object.assign(out, JSON.parse(cr.value));
+}
 const serialized = out.serialized;
 delete out.serialized;
 

@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and attach artifacts
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the macOS app
+        run: ./build.sh
+
+      - name: Build the standalone page
+        run: |
+          mkdir -p dist
+          python3 Scripts/make-preview.py sample.md dist/glyph.html --chrome
+
+      - name: Zip the macOS app
+        run: |
+          cd build
+          zip -qr ../dist/Glyph-macOS.zip Glyph.app
+          cd ..
+          ls -la dist/
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Glyph-macOS.zip
+            dist/glyph.html
+          body: |
+            ## Glyph
+
+            **macOS app** — download `Glyph-macOS.zip`, unzip, drag `Glyph.app` to Applications.
+            It is unsigned, so the first launch needs right-click → Open. Building from source
+            (`./build.sh`) avoids that.
+
+            **Any other computer** — download `glyph.html` and open it in your browser.
+            One self-contained file, nothing to install: tabs, the formatting toolbar,
+            open and save, raw markdown view, light and dark. In Chrome and Edge it saves
+            straight back to the file you opened; elsewhere it downloads.
+
+            Windows and Linux do not have a native app yet.
