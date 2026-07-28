@@ -69,6 +69,11 @@ jobs:
         run: |
           python3 Scripts/make-preview.py Scripts/fixtures/fidelity.md /tmp/fidelity.html
           /tmp/webkit-smoke /tmp/fidelity.html Scripts/fixtures/fidelity.md Scripts/fidelity-smoke.js
+      - name: Links — notes open, executables do not
+        run: |
+          clang -fobjc-arc Scripts/link-smoke.m -o /tmp/link-smoke -framework Foundation
+          mkdir -p /tmp/linkdir
+          /tmp/link-smoke /tmp/linkdir
       - name: Check the raw editor's syntax highlighting
         run: |
           clang -fobjc-arc Scripts/highlight-smoke.m Sources/GlyphTheme.m \

@@ -129,17 +129,42 @@ static BOOL GlyphRoundTripPreservesContent(NSString *original, NSString *seriali
     return YES;
 }
 
-// A document is untrusted input, so a link inside one must never be able to hand
-// the system an arbitrary URL. NSWorkspace happily launches other applications
-// via custom schemes and can act on file:// paths; only ordinary web and mail
-// links are worth opening on a user's behalf.
-static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
-    if (!url) return NO;
+// What a clicked link is allowed to do. A document is untrusted input, so it
+// must never be able to hand the system an arbitrary URL — NSWorkspace will
+// launch other applications via custom schemes and act on file paths.
+//
+// Links between notes are the exception worth supporting: [other](other.md) is
+// how a wiki is written, and it worked before the scheme allowlist by accident.
+// It comes back deliberately here, and more narrowly than before — only a
+// markdown file that exists, and opened as a Glyph document rather than handed
+// to LaunchServices, so a link to a .command or .app cannot launch anything.
+typedef NS_ENUM(NSInteger, GlyphLinkAction) {
+    GlyphLinkIgnore = 0,
+    GlyphLinkOpenExternally,
+    GlyphLinkOpenAsDocument,
+};
+
+static GlyphLinkAction GlyphActionForURL(NSURL *url) {
+    if (!url) return GlyphLinkIgnore;
     NSString *scheme = url.scheme.lowercaseString;
-    if (!scheme) return NO;
-    return [scheme isEqualToString:@"http"] ||
-           [scheme isEqualToString:@"https"] ||
-           [scheme isEqualToString:@"mailto"];
+    if (!scheme) return GlyphLinkIgnore;
+    if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"] ||
+        [scheme isEqualToString:@"mailto"]) {
+        return GlyphLinkOpenExternally;
+    }
+    if ([scheme isEqualToString:@"file"]) {
+        static NSSet *markdown;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            markdown = [NSSet setWithArray:@[@"md", @"markdown", @"mdown", @"mkd"]];
+        });
+        BOOL isDir = NO;
+        if ([markdown containsObject:url.pathExtension.lowercaseString] &&
+            [NSFileManager.defaultManager fileExistsAtPath:url.path isDirectory:&isDir] && !isDir) {
+            return GlyphLinkOpenAsDocument;
+        }
+    }
+    return GlyphLinkIgnore;
 }
 
 // Lets the first click on an unfocused window reach the page instead of only
@@ -909,7 +934,7 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
     } else if ([type isEqualToString:@"openURL"]) {
         NSString *urlString = [body[@"url"] isKindOfClass:[NSString class]] ? body[@"url"] : nil;
         NSURL *url = urlString ? [NSURL URLWithString:urlString] : nil;
-        if (GlyphURLIsSafeToOpen(url)) [[NSWorkspace sharedWorkspace] openURL:url];
+        [self followLink:url];
     }
 }
 
@@ -1020,12 +1045,28 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
 
 // Clicked links open in the system default app (browser for web links),
 // never inside the reading pane.
+- (void)followLink:(NSURL *)url {
+    switch (GlyphActionForURL(url)) {
+        case GlyphLinkOpenExternally:
+            [[NSWorkspace sharedWorkspace] openURL:url];
+            break;
+        case GlyphLinkOpenAsDocument:
+            [[NSDocumentController sharedDocumentController]
+                openDocumentWithContentsOfURL:url
+                                      display:YES
+                            completionHandler:^(NSDocument *d, BOOL already, NSError *e) {}];
+            break;
+        case GlyphLinkIgnore:
+            break;
+    }
+}
+
 - (void)webView:(WKWebView *)webView
     decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
                     decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
     NSURL *url = navigationAction.request.URL;
     if (navigationAction.navigationType == WKNavigationTypeLinkActivated) {
-        if (GlyphURLIsSafeToOpen(url)) [[NSWorkspace sharedWorkspace] openURL:url];
+        [self followLink:url];
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
