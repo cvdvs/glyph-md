@@ -1,0 +1,1180 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #26272b;
+    --muted: #75797f;
+    --faint: #a9adb3;
+    --accent: #6944ff;
+    --accent-soft: rgba(105, 68, 255, 0.08);
+    --border: #e8e8ec;
+    --border-strong: #d2d2d8;
+    --code-bg: #f4f4f7;
+    --pre-bg: #f8f8fa;
+    --pre-border: #ececf1;
+    --hl: rgba(255, 208, 0, 0.35);
+    --h1: #d23b71;
+    --h2: #ae761b;
+    --h3: #178d99;
+    --h4: #7a4fd0;
+    --link: #c62f6d;
+    --quote: #6d5fb0;
+    --tc0: #c62f6d;
+    --tc1: #9c6a12;
+    --tc2: #127f8b;
+    --tc3: #3d8f52;
+    --tc4: #7a4fd0;
+    --tc5: #2e6cc9;
+    --co-note: #4a8cff;
+    --co-tip: #2fb8a5;
+    --co-warning: #e6a23c;
+    --co-danger: #f75c5c;
+    --co-success: #4fbb6b;
+    --co-question: #dfae3d;
+    --co-quote: #9aa0a8;
+    --co-example: #a06bff;
+    --co-important: #3fb2d4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e26;
+      --fg: #d8dade;
+      --muted: #9094a0;
+      --faint: #5f6370;
+      --accent: #9c8bff;
+      --accent-soft: rgba(156, 139, 255, 0.13);
+      --border: #32323c;
+      --border-strong: #474752;
+      --code-bg: #2a2a34;
+      --pre-bg: #24242c;
+      --pre-border: #30303a;
+      --hl: rgba(255, 208, 0, 0.25);
+      --h1: #ef5d8d;
+      --h2: #e5ad4c;
+      --h3: #54bec4;
+      --h4: #b48bf2;
+      --link: #ee6d95;
+      --quote: #a99bd6;
+      --tc0: #ef6a92;
+      --tc1: #e5ad4c;
+      --tc2: #54bec4;
+      --tc3: #7cbf72;
+      --tc4: #b48bf2;
+      --tc5: #6ea6f5;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: 15.5px;
+    line-height: 1.68;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+
+  #content {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 44px 44px 120px;
+  }
+  #content > :first-child { margin-top: 0; }
+
+  #md {
+    outline: none;
+    caret-color: var(--accent);
+    min-height: 5em;
+  }
+
+  /* ---------- typography ---------- */
+  #md h1, #md h2, #md h3, #md h4, #md h5, #md h6 {
+    font-weight: 600;
+    line-height: 1.28;
+    margin: 1.7em 0 0.55em;
+  }
+  #md h1 { font-size: 1.85em; font-weight: 700; letter-spacing: -0.018em; margin-top: 0.4em; color: var(--h1); }
+  #md h2 { font-size: 1.42em; letter-spacing: -0.012em; color: var(--h2); }
+  #md h3 { font-size: 1.17em; color: var(--h3); }
+  #md h4 { font-size: 1em; color: var(--h4); }
+  #md h5, #md h6 { font-size: 0.86em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  #md > :first-child { margin-top: 0; }
+
+  #md p { margin: 0 0 0.9em; }
+  #md strong { font-weight: 600; }
+  #md a {
+    color: var(--link);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent);
+    text-underline-offset: 3px;
+  }
+  #md a:hover { text-decoration-color: var(--link); }
+
+  #md ul, #md ol { margin: 0 0 0.9em; padding-left: 1.45em; }
+  #md li { margin: 0.2em 0; }
+  #md li > ul, #md li > ol { margin-bottom: 0; }
+  #md ul li::marker, #md ol li::marker { color: var(--faint); }
+
+  #md li.task { list-style: none; margin-left: -1.45em; padding-left: 1.45em; }
+  #md li.task > input[type="checkbox"] {
+    width: 14.5px; height: 14.5px;
+    accent-color: var(--accent);
+    margin: 0 0.5em 0 0;
+    vertical-align: -2.5px;
+    cursor: pointer;
+  }
+
+  #md code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.855em;
+    background: var(--code-bg);
+    padding: 0.14em 0.42em;
+    border-radius: 5px;
+  }
+  #md pre {
+    background: var(--pre-bg);
+    border: 1px solid var(--pre-border);
+    border-radius: 10px;
+    padding: 15px 18px;
+    overflow-x: auto;
+    margin: 0 0 1.1em;
+    line-height: 1.55;
+  }
+  #md pre code {
+    background: none;
+    padding: 0;
+    font-size: 13px;
+    color: var(--fg);
+  }
+
+  #md blockquote {
+    margin: 1.2em 0;
+    padding: 0.05em 0 0.05em 1.05em;
+    border-left: 2.5px solid color-mix(in srgb, var(--quote) 60%, transparent);
+    color: var(--quote);
+  }
+  #md blockquote p:last-child { margin-bottom: 0; }
+
+  #md hr {
+    border: none;
+    height: 1px;
+    background: var(--border);
+    margin: 2.6em 0;
+  }
+
+  #md img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 0.35em 0;
+  }
+
+  #md table {
+    border-collapse: collapse;
+    margin: 1.4em 0;
+    font-size: 0.94em;
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  #md th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--muted);
+    background: color-mix(in srgb, var(--fg) 3%, transparent);
+  }
+  #md th, #md td {
+    padding: 0.5em 0.9em;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  #md mark {
+    background: var(--hl);
+    color: inherit;
+    padding: 0.05em 0.18em;
+    border-radius: 3px;
+  }
+
+  .wikilink {
+    color: var(--link);
+    background: color-mix(in srgb, var(--link) 11%, transparent);
+    padding: 0.05em 0.42em;
+    border-radius: 6px;
+  }
+  .tag {
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 0.04em 0.6em;
+    border-radius: 999px;
+    font-size: 0.86em;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .tag-c0 { color: var(--tc0); background: color-mix(in srgb, var(--tc0) 14%, transparent); }
+  .tag-c1 { color: var(--tc1); background: color-mix(in srgb, var(--tc1) 14%, transparent); }
+  .tag-c2 { color: var(--tc2); background: color-mix(in srgb, var(--tc2) 14%, transparent); }
+  .tag-c3 { color: var(--tc3); background: color-mix(in srgb, var(--tc3) 14%, transparent); }
+  .tag-c4 { color: var(--tc4); background: color-mix(in srgb, var(--tc4) 14%, transparent); }
+  .tag-c5 { color: var(--tc5); background: color-mix(in srgb, var(--tc5) 14%, transparent); }
+
+  /* ---------- callouts ---------- */
+  #md .callout {
+    --co: var(--co-note);
+    border: 1px solid color-mix(in srgb, var(--co) 30%, transparent);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--co) 9%, transparent);
+    padding: 12px 16px;
+    margin: 1.3em 0;
+    color: var(--fg);
+  }
+  #md .callout[data-callout="tip"] { --co: var(--co-tip); }
+  #md .callout[data-callout="warning"] { --co: var(--co-warning); }
+  #md .callout[data-callout="danger"] { --co: var(--co-danger); }
+  #md .callout[data-callout="success"] { --co: var(--co-success); }
+  #md .callout[data-callout="question"] { --co: var(--co-question); }
+  #md .callout[data-callout="quote"] { --co: var(--co-quote); }
+  #md .callout[data-callout="example"] { --co: var(--co-example); }
+  #md .callout[data-callout="important"] { --co: var(--co-important); }
+  #md .callout-title {
+    color: var(--co);
+    font-weight: 600;
+    font-size: 0.95em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  #md .callout-icon {
+    width: 17px;
+    height: 17px;
+    flex: none;
+  }
+  #md .callout-title + * { margin-top: 7px; }
+  #md .callout > p { margin: 0 0 0.5em; }
+  #md .callout > :last-child { margin-bottom: 0; }
+  #md details.callout > summary.callout-title {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    outline: none;
+  }
+  #md details.callout > summary.callout-title::-webkit-details-marker { display: none; }
+  #md details.callout > summary.callout-title::after {
+    content: "›";
+    display: inline-block;
+    margin-left: 7px;
+    opacity: 0.65;
+    transition: transform 0.15s ease;
+  }
+  #md details.callout[open] > summary.callout-title::after {
+    transform: rotate(90deg);
+  }
+  #md details.callout > summary.callout-title + * { margin-top: 7px; }
+
+  /* ---------- frontmatter properties ---------- */
+  .props {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px 9px;
+    margin: 0 0 2.3em;
+  }
+  .props summary {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  .props summary::-webkit-details-marker { display: none; }
+  .props summary::after { content: " ›"; opacity: 0.6; }
+  .props[open] summary::after { content: ""; }
+  .props table { border-collapse: collapse; margin: 9px 0 3px; }
+  .props td { padding: 3px 0; vertical-align: top; font-size: 13.5px; border: none; }
+  .props td.k {
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    padding-right: 24px;
+    padding-top: 5px;
+    white-space: nowrap;
+    width: 1%;
+  }
+  .props .pill {
+    display: inline-block;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 999px;
+    padding: 1px 9px;
+    font-size: 12.5px;
+    margin: 1px 5px 1px 0;
+  }
+  .props pre.fmv {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    color: var(--fg);
+  }
+  .fm-empty { color: var(--faint); }
+</style>
+</head>
+<body>
+<div id="content"><article id="md"></article></div>
+<script>/*__MARKED_JS__*/</script>
+<script>
+"use strict";
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => (
+  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+));
+
+marked.use({ gfm: true, breaks: true });
+
+const wikilink = {
+  name: "wikilink",
+  level: "inline",
+  start(src) { const i = src.indexOf("[["); return i < 0 ? undefined : i; },
+  tokenizer(src) {
+    const m = /^(!?)\[\[([^\[\]\n]+?)\]\]/.exec(src);
+    if (!m) return;
+    return { type: "wikilink", raw: m[0], embed: m[1] === "!", target: m[2] };
+  },
+  renderer(token) {
+    const parts = token.target.split("|");
+    const target = parts[0].trim();
+    const alias = parts.length > 1 ? parts.slice(1).join("|").trim() : null;
+    if (token.embed && /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i.test(target)) {
+      const w = alias && /^\d+$/.test(alias) ? ` width="${alias}"` : "";
+      return `<img src="${esc(encodeURI(target))}"${w} alt="${esc(target)}" data-raw="${esc(token.raw)}">`;
+    }
+    return `<span class="wikilink" data-raw="${esc(token.raw)}">${esc(alias || target)}</span>`;
+  },
+};
+
+const obsidianHighlight = {
+  name: "obsidianHighlight",
+  level: "inline",
+  start(src) { const i = src.indexOf("=="); return i < 0 ? undefined : i; },
+  tokenizer(src) {
+    const m = /^==([^\n]+?)==/.exec(src);
+    if (!m) return;
+    return {
+      type: "obsidianHighlight",
+      raw: m[0],
+      text: m[1],
+      tokens: this.lexer.inlineTokens(m[1]),
+    };
+  },
+  renderer(token) {
+    return `<mark>${this.parser.parseInline(token.tokens)}</mark>`;
+  },
+};
+
+marked.use({ extensions: [wikilink, obsidianHighlight] });
+
+/* ---------- frontmatter ---------- */
+
+function splitFrontmatter(src) {
+  const m = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(src);
+  if (!m) return { fm: null, body: src, prefix: "" };
+  return { fm: m[1], body: src.slice(m[0].length), prefix: m[0] };
+}
+
+function fmValueHtml(val) {
+  if (!val) return '<span class="fm-empty">—</span>';
+  if (val.includes("\n")) {
+    const lines = val.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (lines.length && lines.every((l) => l.startsWith("- "))) {
+      return lines.map((l) => `<span class="pill">${esc(l.slice(2))}</span>`).join("");
+    }
+    return `<pre class="fmv">${esc(val)}</pre>`;
+  }
+  const list = /^\[(.*)\]$/.exec(val);
+  if (list) {
+    const items = list[1].split(",").map((s) => s.trim()).filter(Boolean);
+    if (items.length) {
+      return items.map((s) => `<span class="pill">${esc(s.replace(/^["']|["']$/g, ""))}</span>`).join("");
+    }
+  }
+  return esc(val.replace(/^["']|["']$/g, ""));
+}
+
+function propsHtml(fm) {
+  const lines = fm.split(/\r?\n/);
+  const rows = [];
+  let i = 0;
+  while (i < lines.length) {
+    const km = /^([^\s:#][^:]*):\s*(.*)$/.exec(lines[i]);
+    if (!km) { i++; continue; }
+    const key = km[1].trim();
+    let val = km[2].trim();
+    const sub = [];
+    let j = i + 1;
+    while (j < lines.length && /^\s+\S/.test(lines[j])) {
+      sub.push(lines[j].replace(/^\s+/, ""));
+      j++;
+    }
+    if (sub.length) {
+      val = (val ? val + "\n" : "") + sub.join("\n");
+      i = j;
+    } else {
+      i++;
+    }
+    rows.push([key, val]);
+  }
+  if (!rows.length) return "";
+  const body = rows
+    .map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td>${fmValueHtml(v)}</td></tr>`)
+    .join("");
+  return `<details class="props" contenteditable="false" open><summary>Properties</summary><table>${body}</table></details>`;
+}
+
+/* ---------- callouts ---------- */
+
+const CALLOUT_META = {
+  note: { c: "note", i: "pencil" },
+  info: { c: "note", i: "info" },
+  todo: { c: "note", i: "check-circle" },
+  abstract: { c: "important", i: "clipboard" },
+  summary: { c: "important", i: "clipboard" },
+  tldr: { c: "important", i: "clipboard" },
+  important: { c: "important", i: "flame" },
+  tip: { c: "tip", i: "flame" },
+  hint: { c: "tip", i: "flame" },
+  success: { c: "success", i: "check" },
+  check: { c: "success", i: "check" },
+  done: { c: "success", i: "check" },
+  question: { c: "question", i: "help" },
+  help: { c: "question", i: "help" },
+  faq: { c: "question", i: "help" },
+  warning: { c: "warning", i: "alert" },
+  caution: { c: "warning", i: "alert" },
+  attention: { c: "warning", i: "alert" },
+  danger: { c: "danger", i: "zap" },
+  error: { c: "danger", i: "zap" },
+  bug: { c: "danger", i: "zap" },
+  fail: { c: "danger", i: "x" },
+  failure: { c: "danger", i: "x" },
+  missing: { c: "danger", i: "x" },
+  quote: { c: "quote", i: "quote" },
+  cite: { c: "quote", i: "quote" },
+  example: { c: "example", i: "list" },
+};
+
+const CALLOUT_ICONS = {
+  pencil: '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  "check-circle": '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  quote: '<path d="M10 11H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6a4 4 0 0 1-4 4"/><path d="M20 11h-4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6a4 4 0 0 1-4 4"/>',
+  list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+};
+
+function calloutIcon(name) {
+  const body = CALLOUT_ICONS[name] || CALLOUT_ICONS.pencil;
+  return '<svg class="callout-icon" contenteditable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+       + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + body + "</svg>";
+}
+
+function transformCallouts(root) {
+  root.querySelectorAll("blockquote").forEach((bq) => {
+    const p = bq.querySelector(":scope > p:first-child");
+    if (!p) return;
+    const marker = /^\[!(\w+)\]([+-])?\s?/.exec((p.textContent || "").trimStart());
+    if (!marker) return;
+    const rawType = marker[1];
+    const meta = CALLOUT_META[rawType.toLowerCase()] || CALLOUT_META.note;
+    const type = meta.c;
+    const icon = calloutIcon(meta.i);
+
+    let html = p.innerHTML.replace(/^\s*\[!\w+\]([+-])?\s*/, "");
+    let titleHtml = "";
+    let restHtml = "";
+    const brAt = html.search(/<br\s*\/?>/i);
+    if (brAt >= 0) {
+      titleHtml = html.slice(0, brAt).trim();
+      restHtml = html.slice(brAt).replace(/^<br\s*\/?>/i, "").trim();
+    } else {
+      titleHtml = html.trim();
+    }
+    if (!titleHtml) {
+      titleHtml = rawType.charAt(0).toUpperCase() + rawType.slice(1).toLowerCase();
+    }
+
+    const fold = marker[2] || "";
+    if (restHtml) { p.innerHTML = restHtml; } else { p.remove(); }
+    const titleContent = icon + "<span>" + titleHtml + "</span>";
+
+    if (fold) {
+      const details = document.createElement("details");
+      details.className = "callout";
+      details.setAttribute("data-callout", type);
+      details.setAttribute("data-raw-type", rawType);
+      if (fold === "+") details.open = true;
+      const summary = document.createElement("summary");
+      summary.className = "callout-title";
+      summary.setAttribute("contenteditable", "false");
+      summary.innerHTML = titleContent;
+      details.appendChild(summary);
+      while (bq.firstChild) details.appendChild(bq.firstChild);
+      bq.replaceWith(details);
+    } else {
+      bq.className = "callout";
+      bq.setAttribute("data-callout", type);
+      bq.setAttribute("data-raw-type", rawType);
+      const title = document.createElement("div");
+      title.className = "callout-title";
+      title.innerHTML = titleContent;
+      bq.insertBefore(title, bq.firstChild);
+    }
+  });
+}
+
+function tagTaskItems(root) {
+  root.querySelectorAll('li > input[type="checkbox"]').forEach((cb) => {
+    cb.parentElement.classList.add("task");
+    cb.removeAttribute("disabled");
+  });
+}
+
+function tagClass(tag) {
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return "tag-c" + (h % 6);
+}
+
+function styleTags(root) {
+  const re = /(^|[\s(])#([A-Za-z_][\w/-]*)/g;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || node.nodeValue.indexOf("#") < 0) return NodeFilter.FILTER_SKIP;
+      const parent = node.parentElement;
+      if (parent && parent.closest("code, pre, a, .wikilink, h1, h2, h3, h4, h5, h6")) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((node) => {
+    re.lastIndex = 0;
+    if (!re.test(node.nodeValue)) return;
+    re.lastIndex = 0;
+    const span = document.createElement("span");
+    span.innerHTML = esc(node.nodeValue).replace(
+      re,
+      (_, pre, tag) => `${pre}<span class="tag ${tagClass(tag)}">#${tag}</span>`
+    );
+    node.parentNode.replaceChild(span, node);
+  });
+}
+
+/* ---------- serializer: formatted DOM -> markdown ---------- */
+
+function serializeInline(node) {
+  let out = "";
+  node.childNodes.forEach((ch) => {
+    if (ch.nodeType === Node.TEXT_NODE) {
+      out += ch.nodeValue.replace(/\u00a0/g, " ").replace(/\u200b/g, "");
+      return;
+    }
+    if (ch.nodeType !== Node.ELEMENT_NODE) return;
+    if (ch.classList && ch.classList.contains("wikilink")) {
+      out += ch.dataset.raw || `[[${ch.textContent}]]`;
+      return;
+    }
+    switch (ch.tagName) {
+      case "STRONG": case "B": {
+        const inner = serializeInline(ch);
+        out += inner.trim() ? `**${inner}**` : inner;
+        break;
+      }
+      case "EM": case "I": {
+        const inner = serializeInline(ch);
+        out += inner.trim() ? `*${inner}*` : inner;
+        break;
+      }
+      case "U": out += `<u>${serializeInline(ch)}</u>`; break;
+      case "DEL": case "S": case "STRIKE": out += `~~${serializeInline(ch)}~~`; break;
+      case "MARK": out += `==${serializeInline(ch)}==`; break;
+      case "CODE": out += "`" + ch.textContent + "`"; break;
+      case "A": {
+        const href = ch.getAttribute("href") || "";
+        out += `[${serializeInline(ch)}](${href})`;
+        break;
+      }
+      case "IMG":
+        out += ch.dataset.raw || `![${ch.getAttribute("alt") || ""}](${ch.getAttribute("src") || ""})`;
+        break;
+      case "BR": out += "\n"; break;
+      case "INPUT": case "SVG": case "svg": break;
+      default: out += serializeInline(ch); break;
+    }
+  });
+  return out;
+}
+
+function serializeList(listEl, indent, ordered) {
+  const out = [];
+  let n = 1;
+  listEl.querySelectorAll(":scope > li").forEach((li) => {
+    const clone = li.cloneNode(true);
+    clone.querySelectorAll(":scope > ul, :scope > ol").forEach((s) => s.remove());
+    clone.querySelectorAll('input[type="checkbox"]').forEach((s) => s.remove());
+    const text = serializeInline(clone).replace(/\n+/g, " ").trim();
+    const checkbox = li.querySelector(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]');
+    let marker = ordered ? `${n}. ` : "- ";
+    if (checkbox) marker = `- [${checkbox.checked ? "x" : " "}] `;
+    out.push(indent + marker + text);
+    li.querySelectorAll(":scope > ul, :scope > ol").forEach((sub) => {
+      out.push(serializeList(sub, indent + "    ", sub.tagName === "OL"));
+    });
+    n++;
+  });
+  return out.join("\n");
+}
+
+function serializeTable(table) {
+  const rows = [...table.querySelectorAll("tr")];
+  if (!rows.length) return "";
+  const cells = (r) => [...r.children].map(
+    (c) => serializeInline(c).replace(/\|/g, "\\|").replace(/\n/g, " ").trim() || " "
+  );
+  const header = cells(rows[0]);
+  let out = "| " + header.join(" | ") + " |\n";
+  out += "|" + header.map(() => " --- ").join("|") + "|";
+  for (let i = 1; i < rows.length; i++) {
+    out += "\n| " + cells(rows[i]).join(" | ") + " |";
+  }
+  return out;
+}
+
+function serializeCallout(el) {
+  const type = el.dataset.rawType || el.dataset.callout || "note";
+  const isDetails = el.tagName === "DETAILS";
+  const fold = isDetails ? (el.open ? "+" : "-") : "";
+  const titleEl = el.querySelector(":scope > .callout-title");
+  let title = "";
+  if (titleEl) {
+    const span = titleEl.querySelector("span");
+    title = (span ? span.textContent : titleEl.textContent).replace(/\u00a0/g, " ").replace(/\u200b/g, "").trim();
+  }
+  const bodyParts = [];
+  el.childNodes.forEach((ch) => {
+    if (ch === titleEl) return;
+    if (ch.nodeType === Node.ELEMENT_NODE) {
+      const s = serializeBlock(ch);
+      if (s !== null && s !== "") bodyParts.push(s);
+    } else if (ch.nodeType === Node.TEXT_NODE && ch.nodeValue.trim()) {
+      bodyParts.push(ch.nodeValue.trim());
+    }
+  });
+  const head = `[!${type}]${fold}${title ? " " + title : ""}`;
+  const body = bodyParts.join("\n\n");
+  const lines = [head, ...(body ? body.split("\n") : [])];
+  return lines.map((l) => (l ? "> " + l : ">")).join("\n");
+}
+
+function serializeBlock(el) {
+  if (el.classList && el.classList.contains("props")) return null;
+  if (el.classList && el.classList.contains("callout")) return serializeCallout(el);
+  switch (el.tagName) {
+    case "H1": return "# " + serializeInline(el).trim();
+    case "H2": return "## " + serializeInline(el).trim();
+    case "H3": return "### " + serializeInline(el).trim();
+    case "H4": return "#### " + serializeInline(el).trim();
+    case "H5": return "##### " + serializeInline(el).trim();
+    case "H6": return "###### " + serializeInline(el).trim();
+    case "P": case "DIV": {
+      // Editing can leave real blocks nested inside a paragraph wrapper.
+      if (el.querySelector(":scope > ul, :scope > ol, :scope > table, :scope > pre, " +
+                           ":scope > blockquote, :scope > h1, :scope > h2, :scope > h3, " +
+                           ":scope > h4, :scope > h5, :scope > h6")) {
+        const parts = [];
+        el.childNodes.forEach((ch) => {
+          if (ch.nodeType === Node.ELEMENT_NODE) {
+            const s = serializeBlock(ch);
+            if (s !== null && s !== "") parts.push(s);
+          } else if (ch.nodeType === Node.TEXT_NODE && ch.nodeValue.trim()) {
+            parts.push(ch.nodeValue.replace(/\u00a0/g, " ").trim());
+          }
+        });
+        return parts.length ? parts.join("\n\n") : null;
+      }
+      const t = serializeInline(el).replace(/\n+$/, "");
+      return t.trim() ? t : null;
+    }
+    case "UL": return serializeList(el, "", false);
+    case "OL": return serializeList(el, "", true);
+    case "BLOCKQUOTE": {
+      const parts = [];
+      el.childNodes.forEach((ch) => {
+        if (ch.nodeType === Node.ELEMENT_NODE) {
+          const s = serializeBlock(ch);
+          if (s !== null && s !== "") parts.push(s);
+        } else if (ch.nodeType === Node.TEXT_NODE && ch.nodeValue.trim()) {
+          parts.push(ch.nodeValue.trim());
+        }
+      });
+      return parts.join("\n\n").split("\n").map((l) => (l ? "> " + l : ">")).join("\n");
+    }
+    case "PRE": {
+      const code = el.querySelector("code");
+      const langMatch = code ? /language-([\w+-]+)/.exec(code.className || "") : null;
+      const lang = langMatch ? langMatch[1] : "";
+      const body = (code || el).textContent.replace(/\n$/, "");
+      return "```" + lang + "\n" + body + "\n```";
+    }
+    case "TABLE": return serializeTable(el);
+    case "HR": return "---";
+    default:
+      return el.outerHTML;
+  }
+}
+
+function serializeDoc() {
+  const md = document.getElementById("md");
+  if (!md) return lastSerialized;
+  const parts = [];
+  md.childNodes.forEach((el) => {
+    if (el.nodeType === Node.TEXT_NODE) {
+      const t = el.nodeValue.trim();
+      if (t) parts.push(t);
+      return;
+    }
+    if (el.nodeType !== Node.ELEMENT_NODE) return;
+    const s = serializeBlock(el);
+    if (s !== null && s !== "") parts.push(s);
+  });
+  return parts.length ? parts.join("\n\n") + "\n" : "";
+}
+
+/* ---------- live editing session ---------- */
+
+let curPrefix = "";
+let lastSerialized = "";
+let syncTimer = null;
+
+function postToApp(msg) {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.glyph) {
+    window.webkit.messageHandlers.glyph.postMessage(msg);
+  }
+}
+
+function doSync() {
+  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+  const md = serializeDoc();
+  if (md !== lastSerialized) {
+    lastSerialized = md;
+    postToApp({ type: "source", text: curPrefix + md });
+  }
+}
+window.glyphFlush = doSync;
+window.glyphSerialize = serializeDoc;
+
+function scheduleSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(doSync, 600);
+}
+
+function currentBlock() {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  let n = sel.anchorNode;
+  if (!n) return null;
+  if (n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+  const md = document.getElementById("md");
+  if (!md.contains(n)) return null;
+  while (n && n.parentElement !== md) n = n.parentElement;
+  return n;
+}
+
+/* Markdown-as-you-type: block rules fire when the block contains only the marker. */
+function tryBlockRules() {
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+
+  // Inside a list item, "[ ] " / "[x] " turns the item into a checkbox.
+  let selEl = sel.anchorNode;
+  if (selEl && selEl.nodeType === Node.TEXT_NODE) selEl = selEl.parentElement;
+  const inLi = selEl && selEl.closest ? selEl.closest("#md li") : null;
+  if (inLi && !inLi.querySelector(':scope > input[type="checkbox"]')) {
+    const t = (inLi.textContent || "").replace(/\u00a0/g, " ");
+    const tm = /^\[( |x)?\] $/.exec(t);
+    if (tm) {
+      inLi.textContent = "";
+      inLi.classList.add("task");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      if (tm[1] === "x") cb.checked = true;
+      inLi.appendChild(cb);
+      const r = document.createRange();
+      r.selectNodeContents(inLi);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      return true;
+    }
+  }
+
+  const blk = currentBlock();
+  if (!blk || !(blk.tagName === "P" || blk.tagName === "DIV")) return false;
+  const text = (blk.textContent || "").replace(/\u00a0/g, " ");
+
+  const clearBlock = () => {
+    const r = document.createRange();
+    r.selectNodeContents(blk);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    document.execCommand("delete");
+  };
+
+  // The browser sometimes nests the freshly made list inside the old
+  // paragraph; unwrap it and put the caret back in the item.
+  const convertToList = (ordered) => {
+    clearBlock();
+    document.execCommand(ordered ? "insertOrderedList" : "insertUnorderedList");
+    const sel2 = getSelection();
+    let li = sel2.anchorNode;
+    if (li && li.nodeType === Node.TEXT_NODE) li = li.parentElement;
+    li = li && li.closest ? li.closest("li") : null;
+    if (!li) return null;
+    const list = li.parentElement;
+    const wrap = list ? list.parentElement : null;
+    if (wrap && /^(P|DIV)$/.test(wrap.tagName) && wrap.parentElement &&
+        (wrap.textContent || "").trim() === (list.textContent || "").trim()) {
+      wrap.replaceWith(list);
+    }
+    const r = document.createRange();
+    r.selectNodeContents(li);
+    r.collapse(false);
+    sel2.removeAllRanges();
+    sel2.addRange(r);
+    return li;
+  };
+
+  let m;
+  if ((m = /^(#{1,6}) $/.exec(text))) {
+    const level = m[1].length;
+    clearBlock();
+    document.execCommand("formatBlock", false, "<h" + level + ">");
+    return true;
+  }
+  if (/^[-*] \[[ x]?\] ?$/.test(text)) {
+    const li = convertToList(false);
+    if (li) {
+      li.classList.add("task");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      li.insertBefore(cb, li.firstChild);
+      const r = document.createRange();
+      r.selectNodeContents(li);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    return true;
+  }
+  if (/^[-*] $/.test(text)) {
+    convertToList(false);
+    return true;
+  }
+  if (/^1[.)] $/.test(text)) {
+    convertToList(true);
+    return true;
+  }
+  if (/^> $/.test(text)) {
+    clearBlock();
+    document.execCommand("formatBlock", false, "<blockquote>");
+    return true;
+  }
+  return false;
+}
+
+/* Inline rules: closing **bold**, *italic*, ==mark==, ~~strike~~, `code` converts live. */
+function tryInlineRules() {
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const node = sel.anchorNode;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+  const parent = node.parentElement;
+  if (!parent || parent.closest("code, pre")) return false;
+  const upto = node.nodeValue.slice(0, sel.anchorOffset);
+  const rules = [
+    { re: /\*\*([^*\n]+)\*\*$/, tag: "strong" },
+    { re: /(^|[^*])\*([^*\n]+)\*$/, tag: "em", group: 2 },
+    { re: /==([^=\n]+)==$/, tag: "mark" },
+    { re: /~~([^~\n]+)~~$/, tag: "del" },
+    { re: /`([^`\n]+)`$/, tag: "code" },
+  ];
+  for (const r of rules) {
+    const m = r.re.exec(upto);
+    if (!m) continue;
+    const inner = m[r.group || 1];
+    const matchLen = r.group ? m[0].length - m[1].length : m[0].length;
+    const start = sel.anchorOffset - matchLen;
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, sel.anchorOffset);
+    const el = document.createElement(r.tag);
+    el.textContent = inner;
+    range.deleteContents();
+    range.insertNode(el);
+    const space = document.createTextNode("\u200b");
+    el.parentNode.insertBefore(space, el.nextSibling);
+    const after = document.createRange();
+    after.setStart(space, 1);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+    return true;
+  }
+  return false;
+}
+
+/* ---------- toolbar API (called from the native formatting bar) ---------- */
+
+function wrapSelectionWith(tag) {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  const container = range.startContainer.nodeType === Node.TEXT_NODE
+    ? range.startContainer.parentElement
+    : range.startContainer;
+  const existing = container && container.closest(tag);
+  if (existing && document.getElementById("md").contains(existing)) {
+    const parent = existing.parentNode;
+    while (existing.firstChild) parent.insertBefore(existing.firstChild, existing);
+    existing.remove();
+    return;
+  }
+  const el = document.createElement(tag);
+  try {
+    range.surroundContents(el);
+  } catch (e) {
+    const frag = range.extractContents();
+    el.appendChild(frag);
+    range.insertNode(el);
+  }
+  sel.removeAllRanges();
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  sel.addRange(r);
+}
+
+function insertBlockAfterCurrent(node) {
+  const blk = currentBlock();
+  const md = document.getElementById("md");
+  if (blk) blk.insertAdjacentElement("afterend", node);
+  else md.appendChild(node);
+  const sel = getSelection();
+  const r = document.createRange();
+  r.selectNodeContents(node.querySelector("p, td, span") || node);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+window.glyphToolbar = function (cmd) {
+  const md = document.getElementById("md");
+  md.focus();
+  switch (cmd) {
+    case "bold": document.execCommand("bold"); break;
+    case "italic": document.execCommand("italic"); break;
+    case "underline": document.execCommand("underline"); break;
+    case "strike": document.execCommand("strikeThrough"); break;
+    case "highlight": wrapSelectionWith("mark"); break;
+    case "code": wrapSelectionWith("code"); break;
+    case "h1": case "h2": case "h3": {
+      const blk = currentBlock();
+      const target = cmd.toUpperCase();
+      document.execCommand("formatBlock", false,
+        blk && blk.tagName === target ? "<p>" : "<" + cmd + ">");
+      break;
+    }
+    case "bullets": document.execCommand("insertUnorderedList"); break;
+    case "quote": document.execCommand("formatBlock", false, "<blockquote>"); break;
+    case "codeblock": document.execCommand("formatBlock", false, "<pre>"); break;
+    case "checklist": {
+      const ul = document.createElement("ul");
+      const li = document.createElement("li");
+      li.className = "task";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      li.appendChild(cb);
+      li.appendChild(document.createTextNode(" "));
+      ul.appendChild(li);
+      insertBlockAfterCurrent(ul);
+      break;
+    }
+    case "link": {
+      const sel = getSelection();
+      if (sel.rangeCount && !sel.isCollapsed) {
+        document.execCommand("createLink", false, "url");
+      } else {
+        document.execCommand("insertHTML", false, '<a href="url">link text</a>');
+      }
+      break;
+    }
+    case "callout": {
+      const d = document.createElement("div");
+      d.className = "callout";
+      d.setAttribute("data-callout", "tip");
+      d.setAttribute("data-raw-type", "tip");
+      d.innerHTML = '<div class="callout-title">' + calloutIcon("flame")
+        + "<span>Title</span></div><p>Text</p>";
+      insertBlockAfterCurrent(d);
+      break;
+    }
+    case "table": {
+      const t = document.createElement("table");
+      t.innerHTML = "<thead><tr><th>Column</th><th>Column</th></tr></thead>"
+        + "<tbody><tr><td>Cell</td><td>Cell</td></tr></tbody>";
+      insertBlockAfterCurrent(t);
+      break;
+    }
+    case "eraser": document.execCommand("removeFormat"); break;
+    case "undo": document.execCommand("undo"); break;
+    case "redo": document.execCommand("redo"); break;
+  }
+  scheduleSync();
+};
+
+window.glyphInsertImage = function (src) {
+  const md = document.getElementById("md");
+  md.focus();
+  document.execCommand("insertImage", false, src);
+  scheduleSync();
+};
+
+/* ---------- render ---------- */
+
+function ensureTrailingParagraph(md) {
+  const last = md.lastElementChild;
+  if (!last || /^(TABLE|PRE|UL|OL|BLOCKQUOTE|DETAILS|HR)$/.test(last.tagName) ||
+      (last.classList && last.classList.contains("callout"))) {
+    const p = document.createElement("p");
+    p.innerHTML = "<br>";
+    md.appendChild(p);
+  }
+}
+
+function attachEditing(md) {
+  md.contentEditable = "true";
+  md.spellcheck = false;
+  document.execCommand("defaultParagraphSeparator", false, "p");
+
+  md.addEventListener("input", () => {
+    // Deferred so the browser's own editing operation finishes first;
+    // running conversions re-entrantly makes them half-apply.
+    setTimeout(() => { tryBlockRules() || tryInlineRules(); }, 0);
+    scheduleSync();
+  });
+
+  md.addEventListener("keydown", (e) => {
+    if (e.metaKey && (e.key === "s" || e.key === "e")) { doSync(); return; }
+    if (e.key === "Enter" && !e.shiftKey) {
+      const blk = currentBlock();
+      if (blk && /^H[1-6]$/.test(blk.tagName)) {
+        e.preventDefault();
+        const p = document.createElement("p");
+        p.innerHTML = "<br>";
+        blk.insertAdjacentElement("afterend", p);
+        const sel = getSelection();
+        const r = document.createRange();
+        r.setStart(p, 0);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        scheduleSync();
+      }
+    }
+  });
+
+  // Paste as plain text; pasted markdown becomes formatted after a quick re-render.
+  md.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+    if (!text) return;
+    document.execCommand("insertText", false, text);
+    if (/[#*`>\[\]|=~-]/.test(text) && text.includes("\n")) {
+      setTimeout(() => {
+        doSync();
+        window.renderMarkdown(curPrefix + lastSerialized);
+      }, 120);
+    }
+  });
+
+  md.addEventListener("change", (e) => {
+    if (e.target && e.target.matches && e.target.matches('input[type="checkbox"]')) {
+      scheduleSync();
+    }
+  });
+
+  md.addEventListener("toggle", () => scheduleSync(), true);
+
+  md.addEventListener("click", (e) => {
+    const a = e.target.closest ? e.target.closest("a") : null;
+    if (a && e.metaKey) {
+      e.preventDefault();
+      postToApp({ type: "openURL", url: a.href });
+    }
+  });
+
+  md.querySelectorAll("a").forEach((a) => { a.title = "⌘-click to open"; });
+}
+
+window.renderMarkdown = function (src) {
+  const y = window.scrollY;
+  const { fm, body, prefix } = splitFrontmatter(src || "");
+  curPrefix = prefix;
+  lastSerialized = body.length && !body.endsWith("\n") ? body + "\n" : body;
+  let html = "";
+  if (fm && fm.trim()) html += propsHtml(fm);
+  let mdHtml = "";
+  try {
+    mdHtml = marked.parse(body);
+  } catch (e) {
+    mdHtml = `<pre>${esc(body)}</pre>`;
+  }
+  html += `<article id="md">${mdHtml}</article>`;
+  const content = document.getElementById("content");
+  content.innerHTML = html;
+  const md = document.getElementById("md");
+  transformCallouts(md);
+  tagTaskItems(md);
+  styleTags(md);
+  ensureTrailingParagraph(md);
+  attachEditing(md);
+  window.scrollTo(0, y);
+};
+
+/*__INITIAL__*/
+if (typeof window.__initial === "string") window.renderMarkdown(window.__initial);
+</script>
+</body>
+</html>
