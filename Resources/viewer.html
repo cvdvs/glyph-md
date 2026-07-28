@@ -2036,7 +2036,13 @@ window.__glyphInstallChrome = function () {
     if (!d) return;
     // Each tab's images resolve against its OWN folder, so this must be set
     // before the render and cleared for a document that has no folder yet.
-    if (nativeHost()) window.__glyphDocDir = d.dir || null;
+    if (nativeHost()) {
+      window.__glyphDocDir = d.dir || null;
+      // Which tab is in front decides which folder the shell resolves a
+      // relative link against. Without this it answers for whichever document
+      // opened first, and a link in the second note looks beside the first one.
+      postToApp({ type: "active", id: d.id });
+    }
     window.renderMarkdown(d.text);
     if (document.body.classList.contains("glyph-raw")) rawArea.value = d.text;
     paintTabs();
@@ -2373,16 +2379,23 @@ window.__glyphInstallChrome = function () {
   window.__glyphOpened = function (name, text, dir) {
     // Reuse the tab if this file is already open, rather than stacking copies.
     const existing = docs.find((d) => d.dir === dir && d.name === name);
+    let d;
     if (existing) {
       existing.text = text || "";
       existing.dirty = false;
       if (existing.id === activeId) { activeId = null; }
       activate(existing.id);
+      d = existing;
     } else {
-      openDoc(name || "Untitled.md", text || "", null, dir || null);
+      d = openDoc(name || "Untitled.md", text || "", null, dir || null);
     }
     paintTabs();
     paintStatus();
+    // The tab ids are minted here, and every later message about this document
+    // carries this one. The shell parked the path it just read and is waiting
+    // to learn which id it belongs to - without this, saving a file that came
+    // from the Open dialog would ask where to put it.
+    postToApp({ type: "opened", id: d.id, name: d.name });
   };
 
   window.__glyphSaved = function (id, name, dir) {

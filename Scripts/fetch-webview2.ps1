@@ -25,7 +25,9 @@ if ((Test-Path $marker) -and ((Get-Content $marker -Raw).Trim() -eq $Version)) {
 }
 
 $url = "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$Version/microsoft.web.webview2.$Version.nupkg"
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "webview2-$Version.nupkg"
+# .zip, not .nupkg: Expand-Archive refuses any other extension, though a
+# nupkg is an ordinary zip underneath.
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "webview2-$Version.zip"
 
 Write-Host "downloading WebView2 SDK $Version"
 # TLS 1.2 is not the default on older PowerShell and nuget.org refuses anything less.

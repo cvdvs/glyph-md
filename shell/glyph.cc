@@ -449,6 +449,7 @@ struct App {
   std::string page_path;   // the composed page in the temp folder
   std::string pending;     // last text the page sent for the active document
   int active = 0;
+  std::string pending_open;  // path handed to the page, awaiting its id
   bool selftest = false;
   int selftest_stage = 0;
   int selftest_failures = 0;
@@ -481,13 +482,15 @@ static void open_path_in_page(const std::string &path) {
     return;
   }
   std::string abs = absolute_path(path);
-  Doc d;
-  d.id = static_cast<int>(g.docs.size()) + 1000;
-  d.path = abs;
-  d.name = base_of(abs);
-  g.docs.push_back(d);
+  // The PAGE mints document ids, in its own counter, and every later message
+  // about this document carries the page's id. Inventing one here meant every
+  // save missed its document and raised a Save-As for a file that already had
+  // a perfectly good path on disk. So the path is parked and claimed by the id
+  // the page reports back.
+  g.pending_open = abs;
   call_page("window.__glyphOpened",
-            {js_string(d.name), js_string(text), js_string(file_url(dir_of(abs), true))});
+            {js_string(base_of(abs)), js_string(text),
+             js_string(file_url(dir_of(abs), true))});
 }
 
 // ------------------------------------------------------------------ selftest
@@ -554,7 +557,29 @@ static void on_page_message(const char *id, const char *req, void *) {
     return;
   }
 
-  if (type == "ready") {
+  if (type == "opened") {
+    // The page has taken the document and given it an id. Bind the path to it.
+    std::string ids, name;
+    if (!json_field(payload, "id", &ids)) return;
+    int docid = std::atoi(ids.c_str());
+    json_field(payload, "name", &name);
+    if (find_doc(docid) || g.pending_open.empty()) return;
+    Doc d;
+    d.id = docid;
+    d.path = g.pending_open;
+    d.name = name.empty() ? base_of(d.path) : name;
+    g.docs.push_back(d);
+    g.pending_open.clear();
+
+  } else if (type == "active") {
+    // Which tab is in front decides which folder a relative link resolves
+    // against. Without this the shell answered for whichever document opened
+    // first, and a link in the second note looked for its target beside the
+    // first one.
+    std::string ids;
+    if (json_field(payload, "id", &ids)) g.active = std::atoi(ids.c_str());
+
+  } else if (type == "ready") {
     // The interface is up. Nothing may be evaluated into the page before this.
     if (g.selftest) run_selftest_stage();
 
@@ -804,6 +829,21 @@ int main(int argc, char **argv) {
   }
 
   g.w = webview_create(0, nullptr);
+  if (!g.w) {
+    // On Windows this is a machine with no Evergreen WebView2 runtime. Every
+    // call below would dereference null, so say what is wrong instead.
+    std::fprintf(stderr,
+                 "glyph: could not create the web view.\n"
+#if defined(_WIN32)
+                 "This needs the Microsoft Edge WebView2 runtime, which is on\n"
+                 "Windows 11 and most Windows 10 machines already. Install it from\n"
+                 "https://developer.microsoft.com/microsoft-edge/webview2/\n"
+#else
+                 "This needs WebKitGTK (libwebkit2gtk-4.1-0) and a running display.\n"
+#endif
+    );
+    return 1;
+  }
   webview_set_title(g.w, "Glyph");
   webview_set_size(g.w, 1000, 800, WEBVIEW_HINT_NONE);
   webview_bind(g.w, "__glyphNative", on_page_message, nullptr);
