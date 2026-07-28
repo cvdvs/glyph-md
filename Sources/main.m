@@ -1,9 +1,56 @@
 #import <Cocoa/Cocoa.h>
 
+static NSString * const kGlyphAppearanceKey = @"GlyphAppearance";
+
 @interface GlyphAppDelegate : NSObject <NSApplicationDelegate>
 @end
 
 @implementation GlyphAppDelegate
+
+- (void)applicationWillFinishLaunching:(NSNotification *)notification {
+    [self applyAppearancePreference];
+}
+
+- (void)applyAppearancePreference {
+    NSString *pref = [[NSUserDefaults standardUserDefaults] stringForKey:kGlyphAppearanceKey];
+    if ([pref isEqualToString:@"light"]) {
+        NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    } else if ([pref isEqualToString:@"dark"]) {
+        NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    } else {
+        NSApp.appearance = nil;   // follow the system
+    }
+}
+
+- (void)setAppearancePreference:(NSString *)pref {
+    if (pref) {
+        [[NSUserDefaults standardUserDefaults] setObject:pref forKey:kGlyphAppearanceKey];
+    } else {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kGlyphAppearanceKey];
+    }
+    [self applyAppearancePreference];
+}
+
+- (void)appearanceSystem:(id)sender { [self setAppearancePreference:nil]; }
+- (void)appearanceLight:(id)sender { [self setAppearancePreference:@"light"]; }
+- (void)appearanceDark:(id)sender { [self setAppearancePreference:@"dark"]; }
+
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+    NSString *pref = [[NSUserDefaults standardUserDefaults] stringForKey:kGlyphAppearanceKey];
+    if (menuItem.action == @selector(appearanceSystem:)) {
+        menuItem.state = (pref == nil) ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
+    if (menuItem.action == @selector(appearanceLight:)) {
+        menuItem.state = [pref isEqualToString:@"light"] ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
+    if (menuItem.action == @selector(appearanceDark:)) {
+        menuItem.state = [pref isEqualToString:@"dark"] ? NSControlStateValueOn : NSControlStateValueOff;
+        return YES;
+    }
+    return YES;
+}
 
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender {
     return YES;
@@ -146,6 +193,24 @@ int main(int argc, const char *argv[]) {
         [menubar addItem:viewItem];
         NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
         [viewMenu addItem:Item(@"Edit", @selector(toggleEditMode:), @"e", 0)];
+        [viewMenu addItem:[NSMenuItem separatorItem]];
+
+        NSMenuItem *appearanceItem = [[NSMenuItem alloc] initWithTitle:@"Appearance"
+                                                                action:nil
+                                                         keyEquivalent:@""];
+        NSMenu *appearanceMenu = [[NSMenu alloc] initWithTitle:@"Appearance"];
+        NSMenuItem *appSystem = Item(@"System", @selector(appearanceSystem:), @"", 0);
+        NSMenuItem *appLight = Item(@"Light", @selector(appearanceLight:), @"", 0);
+        NSMenuItem *appDark = Item(@"Dark", @selector(appearanceDark:), @"", 0);
+        appSystem.target = delegate;
+        appLight.target = delegate;
+        appDark.target = delegate;
+        [appearanceMenu addItem:appSystem];
+        [appearanceMenu addItem:appLight];
+        [appearanceMenu addItem:appDark];
+        appearanceItem.submenu = appearanceMenu;
+        [viewMenu addItem:appearanceItem];
+
         [viewMenu addItem:[NSMenuItem separatorItem]];
         [viewMenu addItem:Item(@"Show Tab Bar", @selector(toggleTabBar:), @"", 0)];
         [viewMenu addItem:Item(@"Show All Tabs", @selector(toggleTabOverview:), @"", 0)];
