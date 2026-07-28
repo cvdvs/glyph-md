@@ -56,12 +56,76 @@ static NSCountedSet *GlyphWordBag(NSString *text) {
     return bag;
 }
 
+// Words alone are not enough. A paragraph holding only "&nbsp;" — a blank answer
+// line in a fillable brief — carries no words, so 81 of them vanished from a
+// client document while the word check reported it safe. So the guard also takes
+// a census of constructs that carry meaning without carrying words.
+//
+// Only DECREASES matter. Normalization routinely adds things (a setext heading
+// becomes an ATX one, blank lines get inserted) and that is harmless.
+typedef struct {
+    NSUInteger blankLines;   // non-empty lines that render as blank (deliberate spacing)
+    NSUInteger comments;     // <!-- provenance markers -->
+    NSUInteger fences;       // code fence delimiters
+    NSUInteger images;       // ![...](...)
+    NSUInteger headings;     // ATX headings
+    NSUInteger tableRows;    // pipe table rows
+} GlyphCensus;
+
+static GlyphCensus GlyphTakeCensus(NSString *text) {
+    GlyphCensus c = {0, 0, 0, 0, 0, 0};
+    NSCharacterSet *blankish = [NSCharacterSet characterSetWithCharactersInString:@" \t\u00a0"];
+    for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+        NSString *trimmed = [line stringByTrimmingCharactersInSet:
+                             NSCharacterSet.whitespaceCharacterSet];
+        if (trimmed.length) {
+            // A line that is visually blank but deliberately not empty.
+            NSString *bare = [[trimmed stringByReplacingOccurrencesOfString:@"&nbsp;" withString:@""]
+                              stringByReplacingOccurrencesOfString:@"&#160;" withString:@""];
+            if ([bare stringByTrimmingCharactersInSet:blankish].length == 0) c.blankLines++;
+            if ([trimmed hasPrefix:@"|"]) c.tableRows++;
+            if ([trimmed hasPrefix:@"```"] || [trimmed hasPrefix:@"~~~"]) c.fences++;
+            unichar first = [trimmed characterAtIndex:0];
+            if (first == '#') {
+                NSUInteger h = 0;
+                while (h < trimmed.length && [trimmed characterAtIndex:h] == '#') h++;
+                if (h <= 6 && h < trimmed.length &&
+                    [trimmed characterAtIndex:h] == ' ') c.headings++;
+            }
+        }
+        NSUInteger from = 0;
+        while (from < line.length) {
+            NSRange r = [line rangeOfString:@"<!--"
+                                    options:0 range:NSMakeRange(from, line.length - from)];
+            if (r.location == NSNotFound) break;
+            c.comments++;
+            from = NSMaxRange(r);
+        }
+        from = 0;
+        while (from < line.length) {
+            NSRange r = [line rangeOfString:@"!["
+                                    options:0 range:NSMakeRange(from, line.length - from)];
+            if (r.location == NSNotFound) break;
+            c.images++;
+            from = NSMaxRange(r);
+        }
+    }
+    return c;
+}
+
 static BOOL GlyphRoundTripPreservesContent(NSString *original, NSString *serialized) {
     NSCountedSet *before = GlyphWordBag(original);
     NSCountedSet *after = GlyphWordBag(serialized);
     for (NSString *w in before) {
         if ([after countForObject:w] < [before countForObject:w]) return NO;
     }
+    GlyphCensus a = GlyphTakeCensus(original), b = GlyphTakeCensus(serialized);
+    if (b.blankLines < a.blankLines) return NO;
+    if (b.comments < a.comments) return NO;
+    if (b.fences < a.fences) return NO;
+    if (b.images < a.images) return NO;
+    if (b.headings < a.headings) return NO;
+    if (b.tableRows < a.tableRows) return NO;
     return YES;
 }
 

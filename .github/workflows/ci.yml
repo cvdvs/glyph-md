@@ -35,6 +35,8 @@ jobs:
         run: node Scripts/engine-smoke.mjs --with-chrome
       - name: Security — a hostile document must not execute
         run: node Scripts/engine-smoke.mjs --security
+      - name: Fidelity — a document must survive being written back
+        run: node Scripts/engine-smoke.mjs --fidelity
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,6 +65,10 @@ jobs:
         run: |
           python3 Scripts/make-preview.py Scripts/fixtures/hostile.md /tmp/hostile.html
           /tmp/webkit-smoke /tmp/hostile.html Scripts/fixtures/hostile.md Scripts/security-smoke.js
+      - name: Fidelity — a document must survive being written back
+        run: |
+          python3 Scripts/make-preview.py Scripts/fixtures/fidelity.md /tmp/fidelity.html
+          /tmp/webkit-smoke /tmp/fidelity.html Scripts/fixtures/fidelity.md Scripts/fidelity-smoke.js
       - name: Check the raw editor's syntax highlighting
         run: |
           clang -fobjc-arc Scripts/highlight-smoke.m Sources/GlyphTheme.m \

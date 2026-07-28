@@ -46,12 +46,16 @@ if (!chromePath) {
 // fixture and runs the security assertions instead of the feature suite.
 const chromeMode = has("--with-chrome");
 const securityMode = has("--security");
+// --fidelity checks that a document survives being written back unchanged.
+const fidelityMode = has("--fidelity");
 
 // ---------- compose the page exactly the way the app does ----------
 const viewer = readFileSync(path.join(ROOT, "Resources", "viewer.html"), "utf8");
 const marked = readFileSync(path.join(ROOT, "Resources", "marked.min.js"), "utf8");
 const fixtureDir = path.join(ROOT, "Scripts", "fixtures");
-const docPath = securityMode
+const docPath = fidelityMode
+  ? path.join(fixtureDir, "fidelity.md")
+  : securityMode
   ? path.join(fixtureDir, "hostile.md")
   : existsSync(path.join(fixtureDir, "selftest.md"))
     ? path.join(fixtureDir, "selftest.md")
@@ -196,7 +200,8 @@ if (shotDir) {
 
 // ---------- run the assertion suite ----------
 const smoke = readFileSync(
-  path.join(ROOT, "Scripts", securityMode ? "security-smoke.js" : "smoke.js"), "utf8");
+  path.join(ROOT, "Scripts",
+    fidelityMode ? "fidelity-smoke.js" : securityMode ? "security-smoke.js" : "smoke.js"), "utf8");
 const { result, exceptionDetails } = await S("Runtime.evaluate", {
   expression: smoke,
   returnByValue: true,
@@ -211,9 +216,9 @@ if (exceptionDetails) {
 const out = JSON.parse(result.value);
 
 // Security mode has its own pass/fail shape and no golden document.
-if (securityMode) {
+if (securityMode || fidelityMode) {
   const bad = Object.entries(out).filter(([k, v]) => k !== "ok" && v !== true);
-  console.log("engine-smoke (security, Blink):");
+  console.log("engine-smoke (" + (fidelityMode ? "fidelity" : "security") + ", Blink):");
   console.log("  " + JSON.stringify(out));
   await cleanup();
   if (bad.length) {

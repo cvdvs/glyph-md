@@ -716,7 +716,35 @@ const EMPHASIS_LIMIT = 200;
 
 function guardInput(src) {
   let fence = null;
-  return String(src || "").split("\n").map((line) => {
+  const lines = String(src || "").split("\n");
+
+  // An unclosed "<!--" swallows everything after it, and the sanitizer then
+  // removes the swallowed text — the same deletion the tag list above prevents,
+  // which comments are not part of because they are not tags. Escape only the
+  // opener that never gets closed, and only outside code.
+  let open = -1, depth = 0, codeFence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const f = /^\s{0,3}(```+|~~~+)/.exec(lines[i]);
+    if (f) {
+      if (codeFence && lines[i].trim().startsWith(codeFence)) codeFence = null;
+      else if (!codeFence) codeFence = f[1][0].repeat(3);
+      continue;
+    }
+    if (codeFence || /^(\s{4,}|\t)/.test(lines[i])) continue;
+    let col = 0;
+    for (;;) {
+      const o = lines[i].indexOf("<!--", col);
+      const c = lines[i].indexOf("-->", col);
+      if (o >= 0 && (c < 0 || o < c)) { if (!depth++) open = i; col = o + 4; }
+      else if (c >= 0) { if (depth) depth--; col = c + 3; }
+      else break;
+    }
+  }
+  if (depth > 0 && open >= 0) {
+    lines[open] = lines[open].replace("<!--", "&lt;!--");
+  }
+
+  return lines.map((line) => {
     const f = /^\s{0,3}(```+|~~~+)/.exec(line);
     if (f) {
       if (fence && line.trim().startsWith(fence)) fence = null;
@@ -1102,9 +1130,18 @@ function serializeImg(el) {
   return `![${alt}](${src})`;
 }
 
+// A comment is inert in both engines Glyph runs, and the owner uses them as
+// provenance markers, so it is written back as a comment rather than escaped.
+function serializeComment(node) {
+  const data = node.nodeValue || "";
+  if (/--!?>/.test(data)) return "&lt;!--" + data + "--&gt;";
+  return "<!--" + data + "-->";
+}
+
 function serializeInline(node) {
   let out = "";
   node.childNodes.forEach((ch) => {
+    if (ch.nodeType === Node.COMMENT_NODE) { out += serializeComment(ch); return; }
     if (ch.nodeType === Node.TEXT_NODE) {
       out += ch.nodeValue
         .replace(/\u00a0/g, " ")
@@ -1217,6 +1254,7 @@ function serializeCallout(el) {
   const bodyParts = [];
   el.childNodes.forEach((ch) => {
     if (ch === titleEl) return;
+    if (ch.nodeType === Node.COMMENT_NODE) { bodyParts.push(serializeComment(ch)); return; }
     if (ch.nodeType === Node.ELEMENT_NODE) {
       const s = serializeBlock(ch);
       if (s !== null && s !== "") bodyParts.push(s);
@@ -1257,13 +1295,17 @@ function serializeBlock(el) {
         return parts.length ? parts.join("\n\n") : null;
       }
       const t = serializeInline(el).replace(/\n+$/, "");
-      return t.trim() ? t : null;
+      if (t.trim()) return t;
+      // Not empty — an intentional blank answer line. Emitted as the entity so
+      // it survives, and so no invisible character enters the file (rule 7).
+      return (el.textContent || "").indexOf("\u00a0") >= 0 ? "&nbsp;" : null;
     }
     case "UL": return serializeList(el, "", false);
     case "OL": return serializeList(el, "", true);
     case "BLOCKQUOTE": {
       const parts = [];
       el.childNodes.forEach((ch) => {
+        if (ch.nodeType === Node.COMMENT_NODE) { parts.push(serializeComment(ch)); return; }
         if (ch.nodeType === Node.ELEMENT_NODE) {
           const s = serializeBlock(ch);
           if (s !== null && s !== "") parts.push(s);
@@ -1293,6 +1335,7 @@ function serializeDoc() {
   if (!md) return lastSerialized;
   const parts = [];
   md.childNodes.forEach((el) => {
+    if (el.nodeType === Node.COMMENT_NODE) { parts.push(serializeComment(el)); return; }
     if (el.nodeType === Node.TEXT_NODE) {
       const t = el.nodeValue.trim();
       if (t) parts.push(t);
