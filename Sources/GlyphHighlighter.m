@@ -297,6 +297,10 @@ static BOOL IsTableDelimiter(NSString *line) {
 
 - (void)highlightAll {
     if (self.lineCount == 0) return;
+    // Coloring is synchronous and main-thread. Past this size it costs tens of
+    // seconds of frozen window, so the raw view stays plain text with line
+    // numbers rather than becoming unusable.
+    if (self.textStorage.length > 400000) return;
     [self highlightLinesFrom:0 to:self.lineCount - 1];
 }
 

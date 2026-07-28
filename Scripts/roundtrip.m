@@ -1,10 +1,10 @@
-// Round-trip fidelity over a corpus of real documents. Renders each one the way
-// Glyph does, serializes it back, and reports whether the author's words survive
-// — the same rule the app's autosave guard uses, so this measures the shipping
-// behavior rather than an approximation of it.
+// Round-trip fidelity over a corpus of real documents, using the SAME rule the
+// app's autosave guard uses — the census below is copied from
+// Sources/MarkdownDocument.m and must be kept in step with it, or this harness
+// reports a different answer from the one the app acts on.
 //
-// Build:
 //   clang -fobjc-arc Scripts/roundtrip.m -o /tmp/roundtrip -framework Cocoa -framework WebKit
+//   /tmp/roundtrip <template.html> <filelist.txt> <out.jsonl>
 //
 // Original header:
 // Round-trip fidelity over a real corpus: render each document the way Glyph
@@ -36,7 +36,64 @@ static NSCountedSet *WordBag(NSString *text) {
     return bag;
 }
 
+typedef struct {
+    NSUInteger blankLines;   // non-empty lines that render as blank (deliberate spacing)
+    NSUInteger comments;     // <!-- provenance markers -->
+    NSUInteger fences;       // code fence delimiters
+    NSUInteger images;       // ![...](...)
+    NSUInteger headings;     // ATX headings
+    NSUInteger tableRows;    // pipe table rows
+} Census;
+
+static Census TakeCensus(NSString *text) {
+    Census c = {0, 0, 0, 0, 0, 0};
+    NSCharacterSet *blankish = [NSCharacterSet characterSetWithCharactersInString:@" \t\u00a0"];
+    for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+        NSString *trimmed = [line stringByTrimmingCharactersInSet:
+                             NSCharacterSet.whitespaceCharacterSet];
+        if (trimmed.length) {
+            // A line that is visually blank but deliberately not empty.
+            NSString *bare = [[trimmed stringByReplacingOccurrencesOfString:@"&nbsp;" withString:@""]
+                              stringByReplacingOccurrencesOfString:@"&#160;" withString:@""];
+            if ([bare stringByTrimmingCharactersInSet:blankish].length == 0) c.blankLines++;
+            if ([trimmed hasPrefix:@"|"]) c.tableRows++;
+            if ([trimmed hasPrefix:@"```"] || [trimmed hasPrefix:@"~~~"]) c.fences++;
+            unichar first = [trimmed characterAtIndex:0];
+            if (first == '#') {
+                NSUInteger h = 0;
+                while (h < trimmed.length && [trimmed characterAtIndex:h] == '#') h++;
+                if (h <= 6 && h < trimmed.length &&
+                    [trimmed characterAtIndex:h] == ' ') c.headings++;
+            }
+        }
+        NSUInteger from = 0;
+        while (from < line.length) {
+            NSRange r = [line rangeOfString:@"<!--"
+                                    options:0 range:NSMakeRange(from, line.length - from)];
+            if (r.location == NSNotFound) break;
+            c.comments++;
+            from = NSMaxRange(r);
+        }
+        from = 0;
+        while (from < line.length) {
+            NSRange r = [line rangeOfString:@"!["
+                                    options:0 range:NSMakeRange(from, line.length - from)];
+            if (r.location == NSNotFound) break;
+            c.images++;
+            from = NSMaxRange(r);
+        }
+    }
+    return c;
+}
+
 static BOOL Preserves(NSString *a, NSString *b, NSMutableArray *lostOut) {
+    Census ca = TakeCensus(a), cb = TakeCensus(b);
+    if (cb.blankLines < ca.blankLines) { [lostOut addObject:@"blank-lines"]; return NO; }
+    if (cb.comments < ca.comments)     { [lostOut addObject:@"comments"]; return NO; }
+    if (cb.fences < ca.fences)         { [lostOut addObject:@"code-fences"]; return NO; }
+    if (cb.images < ca.images)         { [lostOut addObject:@"images"]; return NO; }
+    if (cb.headings < ca.headings)     { [lostOut addObject:@"headings"]; return NO; }
+    if (cb.tableRows < ca.tableRows)   { [lostOut addObject:@"table-rows"]; return NO; }
     NSCountedSet *before = WordBag(a), *after = WordBag(b);
     BOOL ok = YES;
     for (NSString *w in before) {

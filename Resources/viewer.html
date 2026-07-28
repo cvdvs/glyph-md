@@ -1432,10 +1432,14 @@ function postToApp(msg) {
 function doSync() {
   if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
   const md = serializeDoc();
+  const full = curPrefix + md;
   if (md !== lastSerialized) {
     lastSerialized = md;
-    postToApp({ type: "source", text: curPrefix + md });
+    postToApp({ type: "source", text: full });
   }
+  // Returned so the app can flush synchronously before saving or closing,
+  // instead of posting and hoping a fixed delay was long enough.
+  return full;
 }
 window.glyphFlush = doSync;
 window.glyphSerialize = serializeDoc;
@@ -1844,6 +1848,12 @@ window.renderMarkdown = function (src) {
   styleTags(md);
   ensureTrailingParagraph(md);
   attachEditing(md);
+  // attachEditing re-enables editing unconditionally, so a document already
+  // judged unsafe to write back must be re-protected here — otherwise toggling
+  // to the raw view and back silently removed both the lock and the warning.
+  if (window.__glyphProtected) {
+    window.glyphSetProtected(true, window.__glyphProtectedDetail);
+  }
   window.scrollTo(0, y);
 };
 
@@ -1852,7 +1862,12 @@ window.renderMarkdown = function (src) {
 // intact. The formatted view is where the serializer writes, so switching it off
 // is what protects the file; the raw view (Cmd-E) writes the text literally and
 // stays available.
+window.__glyphProtected = false;
+window.__glyphProtectedDetail = "";
+
 window.glyphSetProtected = function (on, detail) {
+  window.__glyphProtected = !!on;
+  window.__glyphProtectedDetail = detail || "";
   const md = document.getElementById("md");
   const content = document.getElementById("content");
   if (!md || !content) return;

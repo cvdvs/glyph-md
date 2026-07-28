@@ -17,6 +17,12 @@ static NSColor *DynamicColor(CGFloat lr, CGFloat lg, CGFloat lb,
     }];
 }
 
+// Past this size the formatted view is not worth attempting: rendering a 1.6MB
+// note freezes the window for seconds and a 3MB one can kill the render process
+// outright. Opening straight as text takes well under a second. Measured against
+// the owner's tree: 48 files of 57,542 are above this, so 99.9% are unaffected.
+static const NSUInteger kGlyphFormattedViewLimit = 300000;
+
 static NSColor *PageBackgroundColor(void) {
     return DynamicColor(1.0, 1.0, 1.0, 0.118, 0.118, 0.149);       // #ffffff / #1e1e26
 }
@@ -202,6 +208,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 @property (nonatomic, strong) NSURL *expectedURL;   // the one load we permit
 @property (nonatomic, assign) BOOL roundTripChecked;
 @property (nonatomic, assign) BOOL roundTripSafe;
+@property (nonatomic, readonly) BOOL isTooLargeToRender;
 @end
 
 @implementation MarkdownDocument
@@ -214,14 +221,19 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     return self;
 }
 
+- (BOOL)isTooLargeToRender { return (self.text ?: @"").length > kGlyphFormattedViewLimit; }
+
 + (BOOL)autosavesInPlace { return YES; }
 + (BOOL)canConcurrentlyReadDocumentsOfType:(NSString *)typeName { return NO; }
 
 #pragma mark - Reading and writing
 
 - (NSData *)dataOfType:(NSString *)typeName error:(NSError **)outError {
-    NSString *current = self.textView ? self.textView.string : self.text;
-    return [(current ?: @"") dataUsingEncoding:NSUTF8StringEncoding];
+    // self.text is the one place every edit path lands — the raw view through
+    // -textDidChange:, the formatted view through -applySourceEdit:. Reading the
+    // text view instead meant a save arriving at the wrong moment could write
+    // whichever of the two happened to be behind.
+    return [(self.text ?: @"") dataUsingEncoding:NSUTF8StringEncoding];
 }
 
 - (BOOL)readFromData:(NSData *)data ofType:(NSString *)typeName error:(NSError **)outError {
@@ -229,10 +241,24 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     if (!s) s = [[NSString alloc] initWithData:data encoding:NSUnicodeStringEncoding];
     if (!s) s = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
     self.text = s ?: @"";
+    // A reloaded file is a different document; the previous verdict does not apply.
+    self.roundTripChecked = NO;
+    self.roundTripSafe = NO;
     if (self.windowControllers.count > 0) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self refreshUIFromText]; });
     }
     return YES;
+}
+
+// Claude Code sessions rewrite the very notes that may be open here. Without
+// this the window kept showing the old text indefinitely, so the file on screen
+// silently stopped matching the file on disk.
+- (void)presentedItemDidChange {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.fileURL || self.isDocumentEdited) return;   // unsaved edits win; NSDocument warns on save
+        NSError *error = nil;
+        [self revertToContentsOfURL:self.fileURL ofType:self.fileType error:&error];
+    });
 }
 
 - (void)refreshUIFromText {
@@ -241,6 +267,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     }
     [self renderMarkdown];
     [self updateWordCount];
+    [self verifyRoundTrip];
 }
 
 // When the file moves (first save, Save As), reload the template so relative
@@ -391,7 +418,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         }
     });
 
-    self.editing = (self.text.length == 0);
+    self.editing = (self.text.length == 0) || self.isTooLargeToRender;
     [self loadTemplateHTML];
     [self applyMode];
     [self updateWordCount];
@@ -536,6 +563,18 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 #pragma mark - Mode switching
 
 - (void)toggleEditMode:(id)sender {
+    if (self.editing && self.isTooLargeToRender) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"This file is too big for the formatted view";
+        alert.informativeText = [NSString stringWithFormat:
+            @"At %@ it would freeze the window for a long time, so Glyph is showing "
+            @"the markdown itself. Everything works here — editing, find, and saving.",
+            [NSByteCountFormatter stringFromByteCount:(long long)self.text.length
+                                           countStyle:NSByteCountFormatterCountStyleFile]];
+        [alert addButtonWithTitle:@"OK"];
+        [alert beginSheetModalForWindow:self.windowForSheet completionHandler:nil];
+        return;
+    }
     if (!self.editing) {
         // Entering raw mode: flush any pending live-preview edits first.
         [self.webView evaluateJavaScript:@"window.glyphFlush && window.glyphFlush()"
@@ -577,18 +616,42 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     [self updateWordCount];
 }
 
-// Menu-driven save while live-editing the preview: flush the page first.
+// The page batches edits and posts them 600ms after typing stops. Anything that
+// commits or discards the document has to collect that first, and waiting a fixed
+// interval was a guess that lost on a large file. glyphFlush now RETURNS the text,
+// so this is a handshake.
+- (void)flushPageThen:(void (^)(void))next {
+    if (self.editing || !self.webView || !self.pageReady) { next(); return; }
+    __weak MarkdownDocument *weakSelf = self;
+    [self.webView evaluateJavaScript:@"window.glyphFlush ? window.glyphFlush() : null"
+                   completionHandler:^(id result, NSError *error) {
+        MarkdownDocument *self2 = weakSelf;
+        if (self2 && [result isKindOfClass:[NSString class]] &&
+            !(self2.roundTripChecked && !self2.roundTripSafe)) {
+            [self2 applySourceEdit:result];
+        }
+        next();
+    }];
+}
+
 - (void)saveDocument:(id)sender {
-    if (!self.editing && self.webView) {
-        [self.webView evaluateJavaScript:@"window.glyphFlush && window.glyphFlush()"
-                       completionHandler:nil];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.08 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            [super saveDocument:sender];
-        });
-        return;
-    }
-    [super saveDocument:sender];
+    [self flushPageThen:^{ [super saveDocument:sender]; }];
+}
+
+- (void)saveDocumentAs:(id)sender {
+    [self flushPageThen:^{ [super saveDocumentAs:sender]; }];
+}
+
+// Closing is the one that actually lost work: if the debounce had not fired, the
+// document did not know it was dirty, so it closed with no "save changes?" at all.
+- (void)canCloseDocumentWithDelegate:(id)delegate
+                 shouldCloseSelector:(SEL)shouldCloseSelector
+                         contextInfo:(void *)contextInfo {
+    [self flushPageThen:^{
+        [super canCloseDocumentWithDelegate:delegate
+                        shouldCloseSelector:shouldCloseSelector
+                                contextInfo:contextInfo];
+    }];
 }
 
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
@@ -1005,12 +1068,21 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 
 - (void)renderMarkdown {
     if (!self.pageReady) return;
+    if (self.isTooLargeToRender) return;
     NSString *t = self.text ?: @"";
     NSData *json = [NSJSONSerialization dataWithJSONObject:@[t] options:0 error:NULL];
     if (!json) return;
     NSString *arr = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
     NSString *js = [NSString stringWithFormat:@"window.renderMarkdown(%@[0])", arr];
     [self.webView evaluateJavaScript:js completionHandler:nil];
+}
+
+// A big enough document can kill the render process. Nothing was listening, so
+// the pane stayed blank forever — and every file opened in that window after it
+// was blank too, because the dead process is reused.
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    self.pageReady = NO;
+    [self loadTemplateHTML];
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
