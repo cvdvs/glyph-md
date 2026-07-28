@@ -41,18 +41,32 @@ if (!chromePath) {
   process.exit(2);
 }
 
+// --with-chrome builds the standalone app; --security renders the hostile
+// fixture and runs the security assertions instead of the feature suite.
+const chromeMode = has("--with-chrome");
+const securityMode = has("--security");
+
 // ---------- compose the page exactly the way the app does ----------
 const viewer = readFileSync(path.join(ROOT, "Resources", "viewer.html"), "utf8");
 const marked = readFileSync(path.join(ROOT, "Resources", "marked.min.js"), "utf8");
 const fixtureDir = path.join(ROOT, "Scripts", "fixtures");
-const docPath = existsSync(path.join(fixtureDir, "selftest.md"))
-  ? path.join(fixtureDir, "selftest.md")
-  : path.join(ROOT, "sample.md");
+const docPath = securityMode
+  ? path.join(fixtureDir, "hostile.md")
+  : existsSync(path.join(fixtureDir, "selftest.md"))
+    ? path.join(fixtureDir, "selftest.md")
+    : path.join(ROOT, "sample.md");
 const doc = readFileSync(docPath, "utf8");
 
 // --chrome is the browser path; --with-chrome selects the standalone-app build.
-const chromeMode = has("--with-chrome");
-let initial = "window.__initial = " + JSON.stringify(doc) + ";";
+
+// JSON.stringify does not escape "<", so a document containing "</script>"
+// would close the script block early and run as HTML — bypassing the sanitizer
+// entirely. Same escaping as Scripts/make-preview.py.
+const embed = (v) => JSON.stringify(v)
+  .replace(/</g, "\\u003c")
+  .replace(/\u2028/g, "\\u2028")
+  .replace(/\u2029/g, "\\u2029");
+let initial = "window.__initial = " + embed(doc) + ";";
 if (chromeMode) {
   initial = 'window.__glyphChrome = true;\nwindow.__initialName = "selftest.md";\n' + initial;
 }
@@ -169,8 +183,9 @@ if (shotDir) {
   console.log("engine-smoke: screenshots -> " + shotDir);
 }
 
-// ---------- run the shared assertion suite ----------
-const smoke = readFileSync(path.join(ROOT, "Scripts", "smoke.js"), "utf8");
+// ---------- run the assertion suite ----------
+const smoke = readFileSync(
+  path.join(ROOT, "Scripts", securityMode ? "security-smoke.js" : "smoke.js"), "utf8");
 const { result, exceptionDetails } = await S("Runtime.evaluate", {
   expression: smoke,
   returnByValue: true,
@@ -183,6 +198,20 @@ if (exceptionDetails) {
 }
 
 const out = JSON.parse(result.value);
+
+// Security mode has its own pass/fail shape and no golden document.
+if (securityMode) {
+  const bad = Object.entries(out).filter(([k, v]) => k !== "ok" && v !== true);
+  console.log("engine-smoke (security, Blink):");
+  console.log("  " + JSON.stringify(out));
+  await cleanup();
+  if (bad.length) {
+    console.error("\nFAILED: " + bad.map(([k, v]) => `${k}=${v}`).join(", "));
+    process.exit(1);
+  }
+  console.log("  ALL PASS");
+  process.exit(0);
+}
 
 // The standalone page must also carry the chrome: tabs, toolbar, status, and a
 // working raw view. Without this the release artifact could quietly lose them.

@@ -25,6 +25,19 @@ static NSColor *EditorTextColor(void) {
     return DynamicColor(0.149, 0.153, 0.169, 0.847, 0.855, 0.871); // #26272b / #d8dade
 }
 
+// A document is untrusted input, so a link inside one must never be able to hand
+// the system an arbitrary URL. NSWorkspace happily launches other applications
+// via custom schemes and can act on file:// paths; only ordinary web and mail
+// links are worth opening on a user's behalf.
+static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
+    if (!url) return NO;
+    NSString *scheme = url.scheme.lowercaseString;
+    if (!scheme) return NO;
+    return [scheme isEqualToString:@"http"] ||
+           [scheme isEqualToString:@"https"] ||
+           [scheme isEqualToString:@"mailto"];
+}
+
 // Lets the first click on an unfocused window reach the page instead of only
 // bringing the window forward — so click-to-edit works on the very first click.
 @interface GlyphWebView : WKWebView
@@ -775,7 +788,7 @@ static NSColor *EditorTextColor(void) {
     } else if ([type isEqualToString:@"openURL"]) {
         NSString *urlString = [body[@"url"] isKindOfClass:[NSString class]] ? body[@"url"] : nil;
         NSURL *url = urlString ? [NSURL URLWithString:urlString] : nil;
-        if (url) [[NSWorkspace sharedWorkspace] openURL:url];
+        if (GlyphURLIsSafeToOpen(url)) [[NSWorkspace sharedWorkspace] openURL:url];
     }
 }
 
@@ -848,13 +861,19 @@ static NSColor *EditorTextColor(void) {
 - (void)webView:(WKWebView *)webView
     decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction
                     decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
-    if (navigationAction.navigationType == WKNavigationTypeLinkActivated &&
-        navigationAction.request.URL) {
-        [[NSWorkspace sharedWorkspace] openURL:navigationAction.request.URL];
+    NSURL *url = navigationAction.request.URL;
+    if (navigationAction.navigationType == WKNavigationTypeLinkActivated) {
+        if (GlyphURLIsSafeToOpen(url)) [[NSWorkspace sharedWorkspace] openURL:url];
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
-    decisionHandler(WKNavigationActionPolicyAllow);
+    // The page is loaded once with loadHTMLString and never navigates again.
+    // Anything else — a form post, a meta refresh, a redirect a document tried to
+    // trigger — is the document trying to leave, and leaving means exfiltration.
+    BOOL isInitialLoad = !url || [url.scheme.lowercaseString isEqualToString:@"about"] ||
+                         [url isFileURL];
+    decisionHandler(isInitialLoad ? WKNavigationActionPolicyAllow
+                                  : WKNavigationActionPolicyCancel);
 }
 
 #pragma mark - Text editing

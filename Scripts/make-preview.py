@@ -23,11 +23,26 @@ marked = (root / "Resources" / "marked.min.js").read_text(encoding="utf-8")
 src = pathlib.Path(args[0])
 sample = src.read_text(encoding="utf-8")
 
-initial = "window.__initial = " + json.dumps(sample) + ";"
+def embed(value):
+    """JSON for embedding inside a <script> block.
+
+    json.dumps does not escape "<", so a document containing "</script>" would
+    close the block early and everything after it would be parsed as HTML — a
+    markdown file could then run whatever it liked, without ever passing through
+    the sanitizer. U+2028/U+2029 are escaped for older parsers that treat them as
+    line terminators inside string literals.
+    """
+    return (json.dumps(value)
+            .replace("<", "\\u003c")
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029"))
+
+
+initial = "window.__initial = " + embed(sample) + ";"
 if chrome:
     initial = (
         "window.__glyphChrome = true;\n"
-        + "window.__initialName = " + json.dumps(src.name) + ";\n"
+        + "window.__initialName = " + embed(src.name) + ";\n"
         + initial
     )
 

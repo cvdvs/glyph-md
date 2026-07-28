@@ -304,6 +304,17 @@
     border-radius: 8px;
     margin: 0.35em 0;
   }
+  /* A remote image is not loaded until you ask for it. */
+  #md img.remote-img {
+    display: inline-block;
+    min-width: 220px;
+    padding: 10px 14px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+  }
 
   #md table {
     border-collapse: collapse;
@@ -656,6 +667,118 @@ const obsidianHighlight = {
 
 marked.use({ extensions: [wikilink, obsidianHighlight] });
 
+/* ---------- sanitizer ----------
+   Markdown allows raw HTML and marked passes it straight through, so a document
+   is untrusted input: notes arrive from model output, downloads and cloned
+   repos. Without this, <img src=x onerror=...> and <svg onload=...> execute in a
+   page that holds a bridge to the app and, on macOS, a file:// base URL.
+
+   Allowlist, not blocklist: anything not named here is dropped. Our own trusted
+   markup (callout icons, tag chips, the Properties panel) is added AFTER this
+   runs, so it is unaffected. */
+
+const SAFE_TAGS = new Set([
+  "p", "br", "hr", "div", "span",
+  "h1", "h2", "h3", "h4", "h5", "h6",
+  "strong", "b", "em", "i", "u", "s", "del", "ins", "mark", "small", "sub", "sup",
+  "code", "pre", "kbd", "samp", "var", "abbr", "cite", "q",
+  "blockquote", "ul", "ol", "li", "dl", "dt", "dd",
+  "a", "img", "input",
+  "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
+  "details", "summary", "figure", "figcaption",
+]);
+
+// Per-element attribute allowlist. Deliberately excludes id and name (DOM
+// clobbering), style (CSS injection and url() exfiltration), and every on* handler.
+const SAFE_ATTRS = {
+  "*": new Set(["class", "title", "lang", "dir"]),
+  a: new Set(["href"]),
+  img: new Set(["src", "alt", "width", "height", "data-raw"]),
+  input: new Set(["type", "checked", "disabled"]),
+  td: new Set(["colspan", "rowspan", "align"]),
+  th: new Set(["colspan", "rowspan", "align", "scope"]),
+  col: new Set(["span"]),
+  colgroup: new Set(["span"]),
+  ol: new Set(["start", "reversed", "type"]),
+  li: new Set(["value"]),
+  details: new Set(["open"]),
+  span: new Set(["data-raw"]),
+};
+
+function safeURL(value, forImage) {
+  const v = String(value || "").trim();
+  // Strip control characters first: "java\tscript:" and friends are still parsed
+  // as a scheme by browsers.
+  const flat = v.replace(/[\u0000-\u0020\u00a0\u2028\u2029]/g, "").toLowerCase();
+  if (/^(javascript|vbscript|livescript|mocha):/.test(flat)) return null;
+  if (flat.startsWith("data:")) {
+    // Images may be embedded (the standalone build does this); nothing else may.
+    return forImage && /^data:image\/(png|jpe?g|gif|webp|avif|bmp|svg\+xml);/.test(flat) ? v : null;
+  }
+  if (/^(file|blob|about):/.test(flat)) return forImage ? v : null;
+  return v;
+}
+
+function scrubNode(root) {
+  const drop = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+
+  nodes.forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    if (!SAFE_TAGS.has(tag)) { drop.push(el); return; }
+
+    const allowed = SAFE_ATTRS[tag];
+    [...el.attributes].forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      // Every event handler, plus anything the allowlists do not name.
+      const ok = (SAFE_ATTRS["*"].has(name) || (allowed && allowed.has(name)))
+        && !name.startsWith("on");
+      if (!ok) { el.removeAttribute(attr.name); return; }
+      if (name === "href" || name === "src") {
+        const safe = safeURL(attr.value, tag === "img");
+        if (safe === null) { el.removeAttribute(attr.name); return; }
+        el.setAttribute(attr.name, safe);
+        // A remote image loads the moment the note opens, which tells a server
+        // you read it — the tracking-pixel trick, and these notes come from
+        // elsewhere. Hold it behind one click, the way mail apps do.
+        if (name === "src" && /^https?:/i.test(safe)) {
+          el.removeAttribute("src");
+          el.setAttribute("data-remote-src", safe);
+          el.className = ((el.getAttribute("class") || "") + " remote-img").trim();
+        }
+      }
+    });
+
+    if (tag === "input" && (el.getAttribute("type") || "").toLowerCase() !== "checkbox") {
+      drop.push(el);
+    }
+  });
+
+  // Unwrap rather than delete, so the words inside a stripped tag survive.
+  drop.forEach((el) => {
+    if (!el.parentNode) return;
+    if (/^(script|style|iframe|object|embed|link|meta|base|template)$/i.test(el.tagName)) {
+      el.remove();
+      return;
+    }
+    while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+    el.remove();
+  });
+  return root;
+}
+
+// A <template> parses HTML inertly: scripts do not run and images do not load,
+// so nothing fires before the scrub.
+function sanitizeHTML(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  scrubNode(tpl.content);
+  return tpl.innerHTML;
+}
+window.glyphSanitize = sanitizeHTML;
+
 /* ---------- frontmatter ---------- */
 
 function splitFrontmatter(src) {
@@ -862,6 +985,17 @@ function styleTags(root) {
 
 /* ---------- serializer: formatted DOM -> markdown ---------- */
 
+// data-remote-src / data-alt / .remote-img are ours, added for display only.
+// The file must get back exactly the image the author wrote.
+function serializeImg(el) {
+  if (el.dataset && el.dataset.raw) return el.dataset.raw;
+  const src = el.getAttribute("data-remote-src") || el.getAttribute("src") || "";
+  const alt = el.hasAttribute("data-alt")
+    ? el.getAttribute("data-alt")
+    : (el.getAttribute("alt") || "");
+  return `![${alt}](${src})`;
+}
+
 function serializeInline(node) {
   let out = "";
   node.childNodes.forEach((ch) => {
@@ -894,9 +1028,7 @@ function serializeInline(node) {
         out += `[${serializeInline(ch)}](${href})`;
         break;
       }
-      case "IMG":
-        out += ch.dataset.raw || `![${ch.getAttribute("alt") || ""}](${ch.getAttribute("src") || ""})`;
-        break;
+      case "IMG": out += serializeImg(ch); break;
       case "BR": out += "\n"; break;
       case "INPUT": case "SVG": case "svg": break;
       case "SPAN": {
@@ -1037,6 +1169,7 @@ function serializeBlock(el) {
       return "```" + lang + "\n" + body + "\n```";
     }
     case "TABLE": return serializeTable(el);
+    case "IMG": return serializeImg(el);
     case "HR": return "---";
     default:
       return el.outerHTML;
@@ -1484,6 +1617,23 @@ function attachEditing(md) {
 
   const modName = window.__glyphPlatform === "mac" ? "⌘" : "Ctrl";
   md.querySelectorAll("a").forEach((a) => { a.title = modName + "-click to open"; });
+
+  // Click a held-back remote image to fetch it.
+  md.querySelectorAll("img.remote-img").forEach((img) => {
+    let host = "";
+    try { host = new URL(img.dataset.remoteSrc).host; } catch (e) {}
+    // Keep the author's alt text: the placeholder label is only for display, and
+    // overwriting alt would write our label into the user's file on the next save.
+    if (!img.hasAttribute("data-alt")) img.setAttribute("data-alt", img.getAttribute("alt") || "");
+    img.setAttribute("alt", "Remote image" + (host ? " from " + host : "") + " — click to load");
+    img.title = "This image lives on " + (host || "another server") +
+      ". Loading it tells that server you opened this note.";
+    img.addEventListener("click", () => {
+      img.setAttribute("alt", img.getAttribute("data-alt") || "");
+      img.src = img.dataset.remoteSrc;
+      img.classList.remove("remote-img");
+    }, { once: true });
+  });
 }
 
 window.renderMarkdown = function (src) {
@@ -1495,7 +1645,9 @@ window.renderMarkdown = function (src) {
   if (fm && fm.trim()) html += propsHtml(fm);
   let mdHtml = "";
   try {
-    mdHtml = marked.parse(body);
+    // Sanitize before anything reaches the document. Our own trusted markup —
+    // callout icons, tag chips, the Properties panel — is added afterwards.
+    mdHtml = sanitizeHTML(marked.parse(body));
   } catch (e) {
     mdHtml = `<pre>${esc(body)}</pre>`;
   }

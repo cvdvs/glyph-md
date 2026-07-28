@@ -33,6 +33,8 @@ jobs:
         run: node Scripts/engine-smoke.mjs --shots artifacts/blink
       - name: Smoke test the standalone app build
         run: node Scripts/engine-smoke.mjs --with-chrome
+      - name: Security — a hostile document must not execute
+        run: node Scripts/engine-smoke.mjs --security
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,6 +59,10 @@ jobs:
         run: clang -fobjc-arc Scripts/webkit-smoke.m -o /tmp/webkit-smoke -framework Cocoa -framework WebKit
       - name: Run the shared assertion suite
         run: /tmp/webkit-smoke /tmp/composed.html sample.md Scripts/smoke.js /tmp/mac-result.json
+      - name: Security — a hostile document must not execute
+        run: |
+          python3 Scripts/make-preview.py Scripts/fixtures/hostile.md /tmp/hostile.html
+          /tmp/webkit-smoke /tmp/hostile.html Scripts/fixtures/hostile.md Scripts/security-smoke.js
       - name: Check the raw editor's syntax highlighting
         run: |
           clang -fobjc-arc Scripts/highlight-smoke.m Sources/GlyphTheme.m \
