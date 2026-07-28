@@ -32,7 +32,7 @@ if ($LASTEXITCODE -ne 0) { throw "fetching the WebView2 SDK failed" }
 # differently. The generated header is pure ASCII for the same reason.
 $args = @(
     "/nologo", "/std:c++17", "/EHsc", "/O2", "/W3", "/utf-8",
-    "/DWEBVIEW_STATIC", "/DUNICODE", "/D_UNICODE",
+    "/DWEBVIEW_STATIC", "/DUNICODE", "/D_UNICODE", "/DNOMINMAX",
     "/I", "shell\vendor\webview", "/I", "shell", "/I", "shell\vendor\webview2\include",
     "shell\glyph.cc",
     "/Fe:$out\glyph.exe", "/Fo:$out\\",

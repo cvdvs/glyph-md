@@ -21,10 +21,25 @@
 //   - The bytes of a note are never decoded. They are read, handed to the page
 //     as UTF-8, and written back. No newline translation, ever - CRLF is the
 //     user's choice and a note may contain U+00A0 that carries meaning.
+// Before any include, because webview.h pulls in windows.h itself.
+// windows.h defines min and max as MACROS, which turns every std::min in this
+// file into "illegal token on right side of ::". Defining them alongside our
+// own #include <windows.h> further down was too late - the header had already
+// been through once. The build scripts pass /DNOMINMAX too.
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
+
 #include "webview.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -34,11 +49,6 @@
 #include "resources.h"
 
 #if defined(_WIN32)
-// windows.h defines min and max as MACROS, which turns every std::min in this
-// file into a syntax error ("illegal token on right side of ::"). NOMINMAX is
-// the supported way to ask it not to, and must come before the include.
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>
 #include <shellapi.h>
