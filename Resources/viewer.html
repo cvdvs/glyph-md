@@ -763,7 +763,13 @@ function guardInput(src) {
     if (fence) return line;
     if (/^(\s{4,}|\t)/.test(line)) return line;
 
-    let out = line.replace(SWALLOWING_TAGS, (m, slash, tag) => "&lt;" + slash + tag);
+    // Two trailing spaces are a hard line break. Rendered they look the same as
+    // a soft newline here, but they do NOT elsewhere — in Obsidian a soft
+    // newline joins the lines — so dropping them changes how the document reads
+    // in the app she also uses. A word-joiner marks them for the serializer and
+    // is invisible in the meantime.
+    let out = line.replace(/(\S)[ \t]{2,}$/, "$1\u2060");
+    out = out.replace(SWALLOWING_TAGS, (m, slash, tag) => "&lt;" + slash + tag);
 
     // A table row containing [[target|alias]] loses everything after that pipe,
     // because GFM reads it as a column break. Escaping it for the parser fixes
@@ -1168,6 +1174,7 @@ function serializeInline(node) {
       out += ch.nodeValue
         .replace(/\u00a0/g, " ")
         .replace(/\u200b/g, "")
+        .replace(/\u2060/g, "")
         // marked escapes stray markup into text; writing it back raw would arm
         // it for the next open (and for every other renderer of this file).
         // "a < b" is untouched because only a tag-shaped bracket is escaped.
@@ -1200,7 +1207,14 @@ function serializeInline(node) {
         break;
       }
       case "IMG": out += serializeImg(ch); break;
-      case "BR": out += "\n"; break;
+      case "BR": {
+        // The marker sits at the end of the text immediately before the break.
+        const prev = ch.previousSibling;
+        const marked = prev && prev.nodeType === Node.TEXT_NODE &&
+                       /\u2060$/.test(prev.nodeValue || "");
+        out += marked ? "  \n" : "\n";
+        break;
+      }
       case "INPUT": case "SVG": case "svg": break;
       case "SPAN": {
         // Chromium/WebView2 sometimes styles a selection with an inline-styled

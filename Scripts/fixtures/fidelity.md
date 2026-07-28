@@ -32,3 +32,8 @@ https://example.com URL.
 FID-8 this paragraph comes after the unclosed comment and must survive.
 
 ## FID-9 a heading after it must survive too
+Line one with a hard break  
+line two follows.
+
+Soft wrap A
+soft wrap B.

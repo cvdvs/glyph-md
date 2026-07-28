@@ -41,6 +41,13 @@
   r.wikilinksHaveNoHref = chips.every((c) => !c.hasAttribute("href"));
   r.wikilinksCarryTarget = chips.every((c) => /^!?\[\[.+\]\]$/.test(c.getAttribute("data-raw") || ""));
 
+  // Two trailing spaces are a deliberate line break. They look identical here
+  // (marked runs with breaks:true) but not in Obsidian, where a soft newline
+  // joins the lines — so dropping them changes how the file reads elsewhere.
+  r.hardBreakKept = /hard break {2}\n/.test(out);
+  r.softWrapNotPromoted = /Soft wrap A\nsoft wrap B/.test(out);
+  r.noJoinerLeaked = out.indexOf("\u2060") < 0;
+
   r.ok = Object.keys(r).every((k) => r[k] === true);
   return JSON.stringify(r);
 })()
