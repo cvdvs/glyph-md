@@ -147,7 +147,14 @@ jobs:
         run: xvfb-run --auto-servernum --server-args='-screen 0 1280x1024x24' ./shell/build/glyph --selftest
       - name: Package a .deb
         run: |
-          VERSION=$(git describe --tags --always | sed 's/^v//')
+          # A Debian version must begin with a digit. There are no tags yet, so
+          # git describe returns a bare commit sha and dpkg-deb refuses it.
+          DESCRIBED=$(git describe --tags --always 2>/dev/null | sed 's/^v//')
+          case "$DESCRIBED" in
+            [0-9]*) VERSION="$DESCRIBED" ;;
+            *)      VERSION="0.0.0+git$DESCRIBED" ;;
+          esac
+          echo "packaging version $VERSION"
           PKG=artifacts/deb/glyph_${VERSION}_amd64
           mkdir -p "$PKG/DEBIAN" "$PKG/usr/bin" "$PKG/usr/share/applications" \
                    "$PKG/usr/share/doc/glyph"

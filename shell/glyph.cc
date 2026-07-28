@@ -34,6 +34,11 @@
 #include "resources.h"
 
 #if defined(_WIN32)
+// windows.h defines min and max as MACROS, which turns every std::min in this
+// file into a syntax error ("illegal token on right side of ::"). NOMINMAX is
+// the supported way to ask it not to, and must come before the include.
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>
 #include <shellapi.h>
