@@ -1,0 +1,9 @@
+upstream: https://github.com/webview/webview
+tag:      0.12.0
+commit:   3ab4b5d722438fc8a13e6ca830c5e2372d19a01d
+license:  MIT (see webview/LICENSE)
+files:    core/include/webview/webview.h -> shell/vendor/webview/webview.h
+
+Glyph depends on the public C API only, plus webview::detail::json_parse for
+reading the payload of a bind() callback. If a future refresh removes that,
+shell/glyph.cc needs its own JSON reader.

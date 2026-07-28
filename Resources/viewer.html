@@ -1404,21 +1404,33 @@ window.__glyphPlatform = window.__glyphPlatform ||
     : /Win/.test(navigator.userAgent) ? "win" : "linux");
 const MOD = (e) => (window.__glyphPlatform === "mac" ? e.metaKey : e.ctrlKey);
 
-// One exit point, three hosts. WKWebView (macOS) and WebKitGTK (Linux) take the
-// object; WebView2 (Windows) only accepts strings and publishes its bridge
+// One exit point, four hosts. WKWebView (macOS) takes the object directly;
+// WebView2 (Windows) only accepts strings and publishes its bridge
 // asynchronously during startup — so an early edit must queue rather than vanish.
 // Dropping a message here would be invisible: doSync() has already recorded the
 // text as synced, so the file would silently stop receiving edits.
+//
+// __glyphNative is the portable shell (shell/glyph.cc), which binds one function
+// through the webview library on all three platforms. It is checked BEFORE
+// chrome.webview because on Windows that object belongs to the LIBRARY's own
+// bind protocol: our message would be delivered to a handler that cannot read it
+// and would be dropped without a word. macOS is unaffected either way — it
+// registers the `glyph` handler and never reaches this far down.
 const __glyphPending = [];
 
 function __glyphBridgeReady() {
   return !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.glyph) ||
+    typeof window.__glyphNative === "function" ||
     !!(window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function");
 }
 
 function __glyphDeliver(msg) {
   if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.glyph) {
     window.webkit.messageHandlers.glyph.postMessage(msg);
+    return true;
+  }
+  if (typeof window.__glyphNative === "function") {
+    window.__glyphNative(JSON.stringify(msg));
     return true;
   }
   if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
