@@ -2013,9 +2013,16 @@ window.__glyphInstallChrome = function () {
     d.scrollY = window.scrollY;
   }
 
-  function openDoc(name, text, handle) {
+  // A native host is present when the portable shell has bound its one
+  // function. Then files are opened and saved through real dialogs instead of
+  // the browser's, which matters because showOpenFilePicker does not exist in
+  // WebKitGTK at all and is unavailable on the file:// page the shell loads.
+  const nativeHost = () => typeof window.__glyphNative === "function";
+
+  function openDoc(name, text, handle, dir) {
     const d = { id: nextId++, name: name || "Untitled.md", text: text || "",
-                dirty: false, handle: handle || null, scrollY: 0 };
+                dirty: false, handle: handle || null, scrollY: 0,
+                dir: dir || null };
     docs.push(d);
     activate(d.id);
     return d;
@@ -2027,6 +2034,9 @@ window.__glyphInstallChrome = function () {
     activeId = id;
     const d = active();
     if (!d) return;
+    // Each tab's images resolve against its OWN folder, so this must be set
+    // before the render and cleared for a document that has no folder yet.
+    if (nativeHost()) window.__glyphDocDir = d.dir || null;
     window.renderMarkdown(d.text);
     if (document.body.classList.contains("glyph-raw")) rawArea.value = d.text;
     paintTabs();
@@ -2054,6 +2064,7 @@ window.__glyphInstallChrome = function () {
   const MD_TYPES = [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown", ".mdown", ".mkd"] } }];
 
   async function doOpen() {
+    if (nativeHost()) { postToApp({ type: "pickOpen" }); return; }
     if (canPick) {
       try {
         const handles = await window.showOpenFilePicker({ multiple: true, types: MD_TYPES });
@@ -2071,6 +2082,12 @@ window.__glyphInstallChrome = function () {
     captureActive();
     const d = active();
     if (!d) return;
+    if (nativeHost()) {
+      // The shell owns the path. It writes the file, or asks for one if this
+      // document has never been saved, and reports back through __glyphSaved.
+      postToApp({ type: "save", id: d.id, name: d.name, text: d.text });
+      return;
+    }
     if (canPick) {
       try {
         let h = d.handle;
@@ -2345,10 +2362,41 @@ window.__glyphInstallChrome = function () {
   });
 
   // The page starts holding whatever document was embedded in it.
-  window.__glyphChromeReady = function (name, text) {
-    openDoc(name || "Untitled.md", text || "");
+  window.__glyphChromeReady = function (name, text, dir) {
+    openDoc(name || "Untitled.md", text || "", null, dir || null);
     paintTabs();
     paintStatus();
+  };
+
+  // The portable shell's side of the file dialogs. It opens a document it has
+  // already read from disk, and confirms one it has written.
+  window.__glyphOpened = function (name, text, dir) {
+    // Reuse the tab if this file is already open, rather than stacking copies.
+    const existing = docs.find((d) => d.dir === dir && d.name === name);
+    if (existing) {
+      existing.text = text || "";
+      existing.dirty = false;
+      if (existing.id === activeId) { activeId = null; }
+      activate(existing.id);
+    } else {
+      openDoc(name || "Untitled.md", text || "", null, dir || null);
+    }
+    paintTabs();
+    paintStatus();
+  };
+
+  window.__glyphSaved = function (id, name, dir) {
+    const d = docs.find((x) => x.id === id);
+    if (!d) return;
+    d.dirty = false;
+    if (name) d.name = name;
+    if (dir) d.dir = dir;
+    // A first save gives the document a folder, so its images can resolve now.
+    if (d.id === activeId && nativeHost()) window.__glyphDocDir = d.dir || null;
+    paintTabs();
+    paintStatus();
+    document.title = d.name + " — Glyph";
+    flash("Saved");
   };
 };
 
@@ -2357,7 +2405,11 @@ window.__glyphInstallChrome = function () {
 // than where the module is defined.
 if (window.__glyphChrome) {
   window.__glyphInstallChrome();
-  window.__glyphChromeReady(window.__initialName, window.__initial);
+  window.__glyphChromeReady(window.__initialName, window.__initial, window.__initialDir);
+  // Tell a native host the interface exists. Nothing may be evaluated into this
+  // page before this point, so the portable shell waits for it rather than
+  // sleeping and hoping.
+  postToApp({ type: "ready" });
 } else if (typeof window.__initial === "string") {
   window.renderMarkdown(window.__initial);
 }

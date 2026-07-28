@@ -120,6 +120,16 @@ def main():
         return 2
     out_path = sys.argv[1]
 
+    # A repeated name becomes a C redefinition. Nothing looks wrong here - both
+    # copies hash correctly and the self-check passes - and the failure surfaces
+    # as a compiler error in a 700KB generated file.
+    seen = set()
+    for name, _ in RESOURCES:
+        if name in seen:
+            print(f"duplicate resource name: {name}", file=sys.stderr)
+            return 1
+        seen.add(name)
+
     blobs = []
     audits = {}
     clean = True

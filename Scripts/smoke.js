@@ -136,6 +136,9 @@
     // the path the author wrote, or every save would rewrite her notes with
     // paths that only work on the machine that opened them.
     {
+      // Restored at the end: later assertions (and, with --chrome, the tab the
+      // shell is holding) expect the document this page opened with.
+      var savedDoc = window.glyphGetText();
       window.__glyphDocDir = "file:///tmp/glyph-test-notes/";
       window.renderMarkdown("Before\n\n![a cat](pics/cat.png)\n\nAfter\n");
       var shown = document.querySelector("#md img");
@@ -160,6 +163,8 @@
       var plain = document.querySelector("#md img");
       r.noDocDirUnchanged = !!plain && plain.getAttribute("src") === "pics/cat.png" &&
         !plain.hasAttribute("data-local-src");
+      window.renderMarkdown(savedDoc);
+      r.docDirRestoredDoc = window.glyphGetText().indexOf("#") >= 0;
     }
 
     r.ok = Object.keys(r).every(function (k) {
