@@ -172,8 +172,50 @@ static std::string make_nonce() {
   return base64(bytes, sizeof bytes);
 }
 
+#if defined(_WIN32)
+// Every path in this file is UTF-8, because that is what the page speaks and
+// what a .md file is written in. The ANSI Win32 functions do NOT take UTF-8:
+// they take the machine's codepage, so a note in "Proiecte Clienti" spelled
+// with the real diacritics - or any Cyrillic, Greek or CJK folder - would fail
+// to open, with no error the user could act on. So the path crosses to UTF-16
+// here and only the W functions are called.
+static std::wstring widen(const std::string &s) {
+  if (s.empty()) return {};
+  int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+  if (n <= 0) return {};
+  std::wstring out(static_cast<size_t>(n), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], n);
+  return out;
+}
+
+static std::string narrow(const std::wstring &s) {
+  if (s.empty()) return {};
+  int n = WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                              nullptr, 0, nullptr, nullptr);
+  if (n <= 0) return {};
+  std::string out(static_cast<size_t>(n), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], n,
+                      nullptr, nullptr);
+  return out;
+}
+
+// MSVC's fstream takes a wide path as an extension; this is the whole reason
+// the standard library is usable here at all.
+#define GLYPH_PATH(p) widen(p).c_str()
+#else
+#define GLYPH_PATH(p) (p).c_str()
+#endif
+
+static bool remove_file(const std::string &path) {
+#if defined(_WIN32)
+  return DeleteFileW(widen(path).c_str()) != 0;
+#else
+  return std::remove(path.c_str()) == 0;
+#endif
+}
+
 static bool read_file(const std::string &path, std::string *out) {
-  std::ifstream in(path.c_str(), std::ios::binary);
+  std::ifstream in(GLYPH_PATH(path), std::ios::binary);
   if (!in) return false;
   out->assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
   return true;
@@ -184,20 +226,20 @@ static bool read_file(const std::string &path, std::string *out) {
 static bool write_file_atomic(const std::string &path, const std::string &data) {
   std::string tmp = path + ".glyph-tmp";
   {
-    std::ofstream out(tmp.c_str(), std::ios::binary | std::ios::trunc);
+    std::ofstream out(GLYPH_PATH(tmp), std::ios::binary | std::ios::trunc);
     if (!out) return false;
     out.write(data.data(), static_cast<std::streamsize>(data.size()));
     out.flush();
-    if (!out) { std::remove(tmp.c_str()); return false; }
+    if (!out) { remove_file(tmp); return false; }
   }
 #if defined(_WIN32)
-  if (!MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-    std::remove(tmp.c_str());
+  if (!MoveFileExW(widen(tmp).c_str(), widen(path).c_str(), MOVEFILE_REPLACE_EXISTING)) {
+    remove_file(tmp);
     return false;
   }
 #else
   if (std::rename(tmp.c_str(), path.c_str()) != 0) {
-    std::remove(tmp.c_str());
+    remove_file(tmp);
     return false;
   }
 #endif
@@ -225,10 +267,14 @@ static std::string base_of(const std::string &path) {
 
 static std::string absolute_path(const std::string &path) {
 #if defined(_WIN32)
-  char buf[MAX_PATH * 4];
-  DWORD n = GetFullPathNameA(path.c_str(), sizeof buf, buf, nullptr);
-  if (n > 0 && n < sizeof buf) return std::string(buf, n);
-  return path;
+  std::wstring w = widen(path);
+  DWORD need = GetFullPathNameW(w.c_str(), 0, nullptr, nullptr);
+  if (need == 0) return path;
+  std::wstring buf(need, L'\0');
+  DWORD n = GetFullPathNameW(w.c_str(), need, &buf[0], nullptr);
+  if (n == 0 || n >= need) return path;
+  buf.resize(n);
+  return narrow(buf);
 #else
   if (!path.empty() && path[0] == '/') return path;
   char buf[4096];
@@ -266,9 +312,13 @@ static std::string file_url(const std::string &path, bool as_directory) {
 
 static std::string temp_dir() {
 #if defined(_WIN32)
-  char buf[MAX_PATH + 1];
-  DWORD n = GetTempPathA(sizeof buf, buf);
-  if (n > 0 && n <= MAX_PATH) return std::string(buf, n);
+  wchar_t buf[MAX_PATH + 1];
+  DWORD n = GetTempPathW(MAX_PATH + 1, buf);
+  if (n > 0 && n <= MAX_PATH) {
+    std::wstring w(buf, n);
+    while (!w.empty() && (w.back() == L'\\' || w.back() == L'/')) w.pop_back();
+    return narrow(w);
+  }
   return ".";
 #else
   const char *t = std::getenv("TMPDIR");
@@ -287,51 +337,55 @@ static void open_externally(const std::string &url);
 #if defined(_WIN32)
 
 static std::vector<std::string> ask_open_paths(webview_t w) {
-  std::vector<char> buf(64 * 1024, 0);
-  OPENFILENAMEA ofn;
+  // Wide throughout: a Romanian folder name reaches this dialog as UTF-8 and
+  // must come back as UTF-8, and the ANSI dialog would mangle both ends.
+  std::vector<wchar_t> buf(64 * 1024, L'\0');
+  OPENFILENAMEW ofn;
   std::memset(&ofn, 0, sizeof ofn);
   ofn.lStructSize = sizeof ofn;
   ofn.hwndOwner = static_cast<HWND>(webview_get_window(w));
-  ofn.lpstrFilter = "Markdown\0*.md;*.markdown;*.mdown;*.mkd\0All files\0*.*\0";
+  ofn.lpstrFilter = L"Markdown\0*.md;*.markdown;*.mdown;*.mkd\0All files\0*.*\0";
   ofn.lpstrFile = buf.data();
   ofn.nMaxFile = static_cast<DWORD>(buf.size());
   ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT |
               OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
   std::vector<std::string> out;
-  if (!GetOpenFileNameA(&ofn)) return out;
+  if (!GetOpenFileNameW(&ofn)) return out;
   // Multi-select gives "dir\0name1\0name2\0\0"; a single file is just the path.
-  std::string first(buf.data());
-  const char *p = buf.data() + first.size() + 1;
+  std::wstring first(buf.data());
+  const wchar_t *p = buf.data() + first.size() + 1;
   if (*p == 0) {
-    out.push_back(first);
+    out.push_back(narrow(first));
   } else {
     while (*p) {
-      out.push_back(first + "\\" + p);
-      p += std::strlen(p) + 1;
+      out.push_back(narrow(first + L"\\" + p));
+      p += wcslen(p) + 1;
     }
   }
   return out;
 }
 
 static std::string ask_save_path(webview_t w, const std::string &suggested) {
-  std::vector<char> buf(4096, 0);
-  std::string s = suggested.empty() ? std::string("Untitled.md") : suggested;
-  std::memcpy(buf.data(), s.c_str(), std::min(s.size(), buf.size() - 1));
-  OPENFILENAMEA ofn;
+  std::vector<wchar_t> buf(4096, L'\0');
+  std::wstring s = widen(suggested.empty() ? std::string("Untitled.md") : suggested);
+  if (s.size() >= buf.size()) s.resize(buf.size() - 1);
+  std::memcpy(buf.data(), s.c_str(), (s.size() + 1) * sizeof(wchar_t));
+  OPENFILENAMEW ofn;
   std::memset(&ofn, 0, sizeof ofn);
   ofn.lStructSize = sizeof ofn;
   ofn.hwndOwner = static_cast<HWND>(webview_get_window(w));
-  ofn.lpstrFilter = "Markdown\0*.md;*.markdown\0All files\0*.*\0";
+  ofn.lpstrFilter = L"Markdown\0*.md;*.markdown\0All files\0*.*\0";
   ofn.lpstrFile = buf.data();
   ofn.nMaxFile = static_cast<DWORD>(buf.size());
-  ofn.lpstrDefExt = "md";
+  ofn.lpstrDefExt = L"md";
   ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
-  if (!GetSaveFileNameA(&ofn)) return {};
-  return std::string(buf.data());
+  if (!GetSaveFileNameW(&ofn)) return {};
+  return narrow(std::wstring(buf.data()));
 }
 
 static void open_externally(const std::string &url) {
-  ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  // Only http/https/mailto reach this, decided by action_for_url.
+  ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 #elif defined(__APPLE__)
@@ -579,6 +633,57 @@ static void report_selftest(const std::string &name, const std::string &json) {
   say("             first difference at byte %zu, line %zu\n", at, line);
   say("             expected: %s\n", slice(want, bol).c_str());
   say("             actual:   %s\n", slice(got, std::min(bol, got.size())).c_str());
+}
+
+// A file whose NAME needs more than the machine's codepage, holding bytes that
+// have to survive exactly. On Windows this is the entire point of the wide-path
+// conversion: with the ANSI functions the file simply fails to open and the
+// user is told nothing they can act on. It runs before the window exists,
+// because it tests the shell's own file handling rather than anything in the
+// page - and the escapes below are written as \x sequences on purpose, since a
+// literal character here would not survive an editing tool (CLAUDE.md rule 7).
+static bool selftest_files() {
+  const std::string dir = temp_dir();
+  // Romanian, because that is who this is for: t-comma, a-circumflex, a-breve,
+  // and an em dash - none of which survive a codepage round trip.
+  const std::string name =
+      "Proiecte Clien\xc8\x9bi \xe2\x80\x94 \xc3\x8ensemn\xc4\x83ri.md";
+  const std::string path = dir + SEP + name;
+  // Content carrying the invisible characters rules 7, 20 and 30 depend on,
+  // plus an ESC, which is what a pasted terminal log contains.
+  const std::string body =
+      "# \xc3\x8ensemn\xc4\x83ri\n\nnbsp:\xc2\xa0 zwsp:\xe2\x80\x8b "
+      "joiner:\xe2\x81\xa0 esc:\x1b[31m\n\n- unu\n- doi\n";
+
+  bool good = true;
+  if (!write_file_atomic(path, body)) {
+    say("  %-10s FAIL could not write %s\n", "files", path.c_str());
+    return false;
+  }
+  std::string back;
+  if (!read_file(path, &back)) {
+    say("  %-10s FAIL could not read back %s\n", "files", path.c_str());
+    good = false;
+  } else if (back != body) {
+    say("  %-10s FAIL %zu bytes written, %zu read back\n", "files",
+        body.size(), back.size());
+    good = false;
+  }
+  // The folder URL the page resolves images against has to survive it too.
+  const std::string url = file_url(dir_of(path), true);
+  if (url.compare(0, 7, "file://") != 0 || url.empty() || url.back() != '/') {
+    say("  %-10s FAIL bad folder URL %s\n", "files", url.c_str());
+    good = false;
+  }
+  if (base_of(path) != name) {
+    say("  %-10s FAIL basename came back as %s\n", "files", base_of(path).c_str());
+    good = false;
+  }
+  remove_file(path);
+  if (good) {
+    say("  %-10s PASS a file named in Romanian, read back byte-exact\n", "files");
+  }
+  return good;
 }
 
 // --------------------------------------------------------------- the bridge
@@ -890,12 +995,15 @@ int main(int argc, char **argv) {
 #endif
   webview_navigate(g.w, file_url(g.page_path, false).c_str());
 
-  if (g.selftest) say("glyph selftest (" GLYPH_PLATFORM ")\n");
+  if (g.selftest) {
+    say("glyph selftest (" GLYPH_PLATFORM ")\n");
+    if (!selftest_files()) g.selftest_failures++;
+  }
   // The selftest starts when the page reports "ready", not on a timer.
 
   webview_run(g.w);
   webview_destroy(g.w);
-  std::remove(g.page_path.c_str());
+  remove_file(g.page_path);
 
   // A selftest that never heard from the page is a FAILURE, and it needs to say
   // which half broke: the window closing on its own with nothing reported is

@@ -1,0 +1,7 @@
+glyph selftest (mac)
+  files      PASS a file named in Romanian, read back byte-exact
+  smoke      PASS
+  golden     matches golden-sample.md exactly
+  security   PASS
+  fidelity   PASS
+selftest: all pass
