@@ -58,7 +58,7 @@ Requires macOS 13+. Uninstall by deleting `/Applications/Glyph.app`.
 
 Two layers, deliberately simple:
 
-- **Native shell** — Objective-C + AppKit ([`Sources/`](Sources)): a document-based app providing the window, tabs, toolbar, raw-text editor, autosave, and Open Recent. Objective-C so the whole thing builds with `clang` and the stock SDK — no Xcode, no package manager, no dependencies to install.
+- **Native shell** — Objective-C + AppKit ([`Sources/`](Sources)): a document-based app providing the window, tabs, toolbar, autosave, and Open Recent. Objective-C so the whole thing builds with `clang` and the stock SDK — no Xcode, no package manager, no dependencies to install. The raw editor's source coloring lives in `GlyphHighlighter` with the palette in `GlyphTheme` (the same values as the CSS, so the two views agree) and line numbers in `GlyphGutter`.
 - **The page** — one `WKWebView` rendering [`Resources/viewer.html`](Resources/viewer.html): the entire UI (CSS + JS) in a single file. [marked.js](https://github.com/markedjs/marked) (MIT, vendored) parses markdown; a custom layer adds the Obsidian extras; the editing layer makes the rendered DOM `contenteditable` and serializes it back to markdown as you type.
 
 `sample.md` doubles as the feature checklist — open it in Glyph to see everything render.
@@ -71,7 +71,15 @@ All visual and editing behavior lives in `Resources/viewer.html`. Preview change
 python3 Scripts/make-preview.py sample.md /tmp/preview.html
 ```
 
-and open that in a browser. `Scripts/webkit-smoke.m` is a headless WKWebView harness that renders a file, simulates typing, and checks the markdown round-trip — the same checks used while building this. Rebuild and reinstall with `./build.sh` + copy to `/Applications` (quit Glyph first).
+and open that in a browser. Three headless harnesses guard the behavior, and CI runs all of them on every push:
+
+| Harness | Checks |
+| --- | --- |
+| `Scripts/engine-smoke.mjs` | The shared UI under real Chrome/Blink — the engine Windows uses. Drives DevTools over Node's built-in WebSocket, so there are no npm packages. Also captures light/dark screenshots. |
+| `Scripts/webkit-smoke.m` | The same suite (`Scripts/smoke.js`) under WKWebView. Both engines must produce `Scripts/fixtures/golden-sample.md` byte-for-byte after a simulated editing session. |
+| `Scripts/highlight-smoke.m` | The raw editor's syntax coloring, asserted per character range against `Scripts/fixtures/highlight-cases.md`. |
+
+Rebuild and reinstall with `./build.sh` + copy to `/Applications` (quit Glyph first).
 
 ## Honest limits
 
