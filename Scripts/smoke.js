@@ -130,6 +130,38 @@
       r.imageNotAbsolute = serImg.indexOf("file://") < 0 && serImg.indexOf("http") !== 0;
     }
 
+    // The portable shell resolves a relative image against the document's own
+    // folder, because its page is loaded from a temp file and has no baseURL.
+    // The display src may be absolute; what goes BACK to the file must still be
+    // the path the author wrote, or every save would rewrite her notes with
+    // paths that only work on the machine that opened them.
+    {
+      window.__glyphDocDir = "file:///tmp/glyph-test-notes/";
+      window.renderMarkdown("Before\n\n![a cat](pics/cat.png)\n\nAfter\n");
+      var shown = document.querySelector("#md img");
+      r.docDirResolves = !!shown &&
+        shown.getAttribute("src") === "file:///tmp/glyph-test-notes/pics/cat.png";
+      r.docDirKeepsOriginal = !!shown &&
+        shown.getAttribute("data-local-src") === "pics/cat.png";
+      var serDoc = window.glyphSerialize();
+      r.docDirRoundTrips = /!\[a cat\]\(pics\/cat\.png\)/.test(serDoc);
+      r.docDirLeaksNoPath = serDoc.indexOf("file:///tmp") < 0;
+      r.docDirKeepsProse = serDoc.indexOf("Before") >= 0 && serDoc.indexOf("After") >= 0;
+      // A note cannot forge the attribute the serializer trusts: it is not in
+      // the allowlist, so the sanitizer must strip it before we ever read it.
+      window.renderMarkdown('<img src="real.png" data-local-src="../../../etc/passwd">\n');
+      var forged = document.querySelector("#md img");
+      r.docDirNotForgeable = !forged || forged.getAttribute("data-local-src") !==
+        "../../../etc/passwd";
+      r.docDirForgeryNotWritten = window.glyphSerialize().indexOf("etc/passwd") < 0;
+      window.__glyphDocDir = undefined;
+      // With no document folder the behaviour must be exactly what it was.
+      window.renderMarkdown("![x](pics/cat.png)\n");
+      var plain = document.querySelector("#md img");
+      r.noDocDirUnchanged = !!plain && plain.getAttribute("src") === "pics/cat.png" &&
+        !plain.hasAttribute("data-local-src");
+    }
+
     r.ok = Object.keys(r).every(function (k) {
       if (k === "serialized" || /Error$/.test(k)) return true;
       var v = r[k];

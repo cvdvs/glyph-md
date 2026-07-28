@@ -909,6 +909,20 @@ function scrubNode(root) {
           el.removeAttribute("src");
           el.setAttribute("data-remote-src", safe);
           el.className = ((el.getAttribute("class") || "") + " remote-img").trim();
+        } else if (name === "src" && window.__glyphDocDir &&
+                   !/^[a-z][a-z0-9+.-]*:/i.test(safe) && !safe.startsWith("//")) {
+          // The portable shell loads ONE page and switches documents inside it,
+          // so a note's relative image path has nothing to resolve against: the
+          // page lives in a temp folder, not next to the note. A single <base>
+          // could not follow a tab switch anyway, and the CSP forbids one. So
+          // the folder is resolved here, per document, and the original path is
+          // kept for the serializer — writing the absolute one back would
+          // rewrite the author's file with a path only this machine can follow.
+          // macOS sets a real baseURL per document and never sets __glyphDocDir.
+          // data-local-src is deliberately NOT in SAFE_ATTRS, so a note cannot
+          // forge one and choose what gets written back in its place.
+          el.setAttribute("data-local-src", safe);
+          el.setAttribute("src", window.__glyphDocDir + safe);
         }
       }
     });
@@ -1147,11 +1161,12 @@ function styleTags(root) {
 
 /* ---------- serializer: formatted DOM -> markdown ---------- */
 
-// data-remote-src / data-alt / .remote-img are ours, added for display only.
-// The file must get back exactly the image the author wrote.
+// data-remote-src / data-local-src / data-alt / .remote-img are ours, added for
+// display only. The file must get back exactly the image the author wrote.
 function serializeImg(el) {
   if (el.dataset && el.dataset.raw) return el.dataset.raw;
-  const src = el.getAttribute("data-remote-src") || el.getAttribute("src") || "";
+  const src = el.getAttribute("data-remote-src") ||
+    el.getAttribute("data-local-src") || el.getAttribute("src") || "";
   const alt = el.hasAttribute("data-alt")
     ? el.getAttribute("data-alt")
     : (el.getAttribute("alt") || "");

@@ -1,0 +1,13 @@
+# Every file in this repo is stored and checked out EXACTLY as committed.
+#
+# Without this, Git for Windows (which sets core.autocrlf=true in its system
+# config, and which the GitHub windows runner inherits) rewrites every LF to CRLF
+# on checkout. Resources/viewer.html would then arrive on Windows 2351 bytes
+# larger than the file macOS ships, the embedded page would differ byte for byte
+# from the one the Mac app renders, and the damage would be invisible: the page
+# still loads, the typing rules just quietly stop matching — on one platform only.
+#
+# Scripts/embed-resources.py refuses to embed a source containing CR and says so,
+# so a checkout that ignores this file fails loudly at build time rather than
+# shipping. See CLAUDE.md rule 7.
+* -text
