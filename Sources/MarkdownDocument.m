@@ -1,5 +1,8 @@
 #import "MarkdownDocument.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import "GlyphTheme.h"
+#import "GlyphHighlighter.h"
+#import "GlyphGutter.h"
 
 static NSColor *DynamicColor(CGFloat lr, CGFloat lg, CGFloat lb,
                              CGFloat dr, CGFloat dg, CGFloat db) {
@@ -47,6 +50,8 @@ static NSColor *EditorTextColor(void) {
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, strong) NSScrollView *scrollView;
 @property (nonatomic, strong) NSTextView *textView;
+@property (nonatomic, strong) GlyphHighlighter *highlighter;
+@property (nonatomic, strong) GlyphGutter *gutter;
 @property (nonatomic, strong) NSView *formatBar;
 @property (nonatomic, strong) NSTextField *countLabel;
 @property (nonatomic, strong) NSToolbarItem *toggleItem;
@@ -87,8 +92,7 @@ static NSColor *EditorTextColor(void) {
 
 - (void)refreshUIFromText {
     if (self.textView && ![self.textView.string isEqualToString:self.text]) {
-        self.textView.string = self.text;
-        [self applyEditorAttributes];
+        [self setRawText:self.text];
     }
     [self renderMarkdown];
     [self updateWordCount];
@@ -167,7 +171,17 @@ static NSColor *EditorTextColor(void) {
     self.scrollView.hasVerticalScroller = YES;
     self.scrollView.drawsBackground = NO;
 
-    NSTextView *tv = [[NSTextView alloc] initWithFrame:self.scrollView.bounds];
+    NSTextStorage *storage = [[NSTextStorage alloc] init];
+    NSLayoutManager *lm = [[NSLayoutManager alloc] init];
+    // Lays out only what is asked for, so a 30,000-word file does not pay for
+    // laying out everything above the visible rect on every gutter draw.
+    lm.allowsNonContiguousLayout = YES;
+    [storage addLayoutManager:lm];
+    NSTextContainer *tc = [[NSTextContainer alloc]
+        initWithContainerSize:NSMakeSize(NSWidth(self.scrollView.bounds), FLT_MAX)];
+    [lm addTextContainer:tc];
+    GlyphTextView *tv = [[GlyphTextView alloc] initWithFrame:self.scrollView.bounds
+                                              textContainer:tc];
     tv.minSize = NSMakeSize(0, 0);
     tv.maxSize = NSMakeSize(FLT_MAX, FLT_MAX);
     tv.verticallyResizable = YES;
@@ -184,12 +198,22 @@ static NSColor *EditorTextColor(void) {
     tv.textContainerInset = NSMakeSize(24, 18);
     tv.backgroundColor = PageBackgroundColor();
     tv.drawsBackground = YES;
-    tv.insertionPointColor = [NSColor colorWithSRGBRed:0.486 green:0.361 blue:1.0 alpha:1.0];
+    tv.insertionPointColor = GlyphAccent();
+    tv.font = GlyphMonoFont();
+    tv.textColor = GlyphFG();
+    tv.defaultParagraphStyle = GlyphBaseParagraphStyle();
     tv.delegate = self;
     tv.string = self.text ?: @"";
     self.textView = tv;
-    [self applyEditorAttributes];
+    self.highlighter = [[GlyphHighlighter alloc] initWithTextView:tv];
     self.scrollView.documentView = tv;
+    // The ruler must be installed after documentView, or it attaches with a nil
+    // clientView and draws an empty strip.
+    self.gutter = [[GlyphGutter alloc] initWithTextView:tv highlighter:self.highlighter];
+    self.scrollView.hasVerticalRuler = YES;
+    self.scrollView.hasHorizontalRuler = NO;
+    self.scrollView.verticalRulerView = self.gutter;
+    self.scrollView.rulersVisible = YES;
     [content addSubview:self.scrollView];
 
     // Word count
@@ -228,20 +252,12 @@ static NSColor *EditorTextColor(void) {
     [self updateWordCount];
 }
 
-- (void)applyEditorAttributes {
-    NSMutableParagraphStyle *para = [[NSMutableParagraphStyle alloc] init];
-    para.lineHeightMultiple = 1.32;
-    NSDictionary *attrs = @{
-        NSFontAttributeName: [NSFont monospacedSystemFontOfSize:13.5 weight:NSFontWeightRegular],
-        NSForegroundColorAttributeName: EditorTextColor(),
-        NSParagraphStyleAttributeName: para,
-    };
-    self.textView.typingAttributes = attrs;
-    self.textView.defaultParagraphStyle = para;
-    if (self.textView.textStorage.length > 0) {
-        [self.textView.textStorage setAttributes:attrs
-                                           range:NSMakeRange(0, self.textView.textStorage.length)];
-    }
+- (void)setRawText:(NSString *)s {
+    if (!self.textView) return;
+    [self.highlighter beginBulkReplace];
+    self.textView.string = s ?: @"";
+    [self.highlighter endBulkReplace];
+    [self.gutter refresh];
 }
 
 #pragma mark - Formatting bar
@@ -386,14 +402,19 @@ static NSColor *EditorTextColor(void) {
     self.formatBar.hidden = NO;
     if (self.editing) {
         if (self.textView && ![self.textView.string isEqualToString:self.text ?: @""]) {
-            self.textView.string = self.text ?: @"";
-            [self applyEditorAttributes];
+            [self setRawText:self.text];
         }
+        // Coloring only happens while the raw view is on screen. Typing in the
+        // formatted view syncs text into this storage constantly, and highlighting
+        // text nobody is looking at is pure cost.
+        self.highlighter.enabled = YES;
+        [self.gutter refresh];
         self.webView.hidden = YES;
         self.scrollView.hidden = NO;
         [self.textView.window makeFirstResponder:self.textView];
     } else {
         self.text = [self.textView.string copy];
+        self.highlighter.enabled = NO;
         [self renderMarkdown];
         self.scrollView.hidden = YES;
         self.webView.hidden = NO;
@@ -764,10 +785,7 @@ static NSColor *EditorTextColor(void) {
     [[self.undoManager prepareWithInvocationTarget:self] applySourceEdit:old rerender:YES];
     [self.undoManager setActionName:@"Edit"];
     self.text = updated;
-    if (self.textView) {
-        self.textView.string = updated;
-        [self applyEditorAttributes];
-    }
+    if (self.textView) [self setRawText:updated];
     if (rerender) [self renderMarkdown];
     [self updateWordCount];
 }

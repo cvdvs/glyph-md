@@ -17,7 +17,7 @@ LLM workflows produce piles of `.md` files. Obsidian wants them moved into a vau
 - **Color-coded hierarchy** — H1 rose, H2 gold, H3 teal, H4 lavender — so long documents read like a map. Dark and light themes follow the system, or force either from View → Appearance.
 - **Tabs.** Every file opens as a tab in one window, like a browser. Drag a tab out for a second window.
 - **A formatting toolbar** above the page: undo/redo, headings, bold/italic/underline/strike/highlight, code, link, picture (copied next to the note so it travels with it), lists, checklist, quote, callout, table, code block, clear formatting.
-- **⌘-click opens links** in your browser; plain click places the cursor. **⌘E** flips to the raw markdown text and back.
+- **⌘-click opens links** in your browser; plain click places the cursor. **⌘E** flips to the raw markdown text and back — and the raw view is a proper source editor: syntax coloring that uses the same palette as the formatted view (an H2 is gold in both), dimmed markers so you read the writing rather than the punctuation, and a line-number gutter.
 - Word count, find (⌘F in raw mode), autosave with macOS version history, and pasted markdown formats itself.
 
 No Electron. The whole app is a few small source files; it compiles in seconds and launches instantly.

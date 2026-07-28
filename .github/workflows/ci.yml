@@ -55,6 +55,11 @@ jobs:
         run: clang -fobjc-arc Scripts/webkit-smoke.m -o /tmp/webkit-smoke -framework Cocoa -framework WebKit
       - name: Run the shared assertion suite
         run: /tmp/webkit-smoke /tmp/composed.html sample.md Scripts/smoke.js /tmp/mac-result.json
+      - name: Check the raw editor's syntax highlighting
+        run: |
+          clang -fobjc-arc Scripts/highlight-smoke.m Sources/GlyphTheme.m \
+            Sources/GlyphHighlighter.m -o /tmp/highlight-smoke -framework Cocoa
+          /tmp/highlight-smoke Scripts/fixtures/highlight-cases.md
       - name: Assert markdown output has not drifted
         run: |
           python3 - <<'EOF'

@@ -12,6 +12,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 clang -fobjc-arc -O2 \
   -target "$ARCH-apple-macos13.0" \
   Sources/main.m Sources/MarkdownDocument.m \
+  Sources/GlyphTheme.m Sources/GlyphHighlighter.m Sources/GlyphGutter.m \
   -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers \
   -o "$APP/Contents/MacOS/Glyph"
 
