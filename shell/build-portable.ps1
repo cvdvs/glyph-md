@@ -25,21 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw "embedding the interface failed" }
 & powershell -ExecutionPolicy Bypass -File Scripts\fetch-webview2.ps1
 if ($LASTEXITCODE -ne 0) { throw "fetching the WebView2 SDK failed" }
 
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
-    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path $vswhere) {
-        $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-        if ($vs) {
-            Write-Host "using the MSVC toolchain at $vs"
-            cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" && set" | ForEach-Object {
-                if ($_ -match "^([^=]+)=(.*)$") { Set-Item -Path "env:$($matches[1])" -Value $matches[2] }
-            }
-        }
-    }
-}
-if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
-    throw "cl.exe not found. Install the Visual Studio Build Tools with the C++ workload, or run this from a Developer PowerShell."
-}
+. (Join-Path $root "Scripts\msvc-env.ps1")
 
 # /utf-8 is not optional: without it MSVC reads the source in the machine's
 # codepage, and a Romanian or Japanese Windows would decode the file

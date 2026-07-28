@@ -196,11 +196,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: The JSON decoder that stands between the page and a file
-        shell: cmd
+        shell: pwsh
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" || call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+          . ./Scripts/msvc-env.ps1
           cl /nologo /std:c++17 /EHsc /utf-8 /I shell Scripts\json-smoke.cc /Fe:json-smoke.exe
-          json-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "compiling the JSON test failed" }
+          ./json-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "the JSON test failed" }
       - name: Build
         shell: pwsh
         run: ./shell/build-portable.ps1
