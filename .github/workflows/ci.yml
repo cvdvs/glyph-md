@@ -216,10 +216,20 @@ jobs:
       - name: Run the suites inside the real app
         shell: pwsh
         run: |
-          # The runner has the WebView2 runtime preinstalled; if that ever
-          # changes this is where it will fail, and it will say so.
-          ./shell/build/glyph.exe --selftest
-          if ($LASTEXITCODE -ne 0) { throw "the Windows selftest failed" }
+          # A GUI-subsystem binary has no stdout on a runner - there is no
+          # console to attach to - so the selftest also writes a log, and that
+          # is what CI reads. Without it the first Windows failure arrived with
+          # no output whatsoever.
+          $code = 0
+          try { ./shell/build/glyph.exe --selftest } catch { $code = 1 }
+          if ($LASTEXITCODE) { $code = $LASTEXITCODE }
+          if (Test-Path glyph-selftest.log) {
+            Write-Host "--- selftest log ---"
+            Get-Content glyph-selftest.log | Write-Host
+          } else {
+            Write-Host "no glyph-selftest.log was written - the app died before it started"
+          }
+          if ($code -ne 0) { throw "the Windows selftest failed (exit $code)" }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

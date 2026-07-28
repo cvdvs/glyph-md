@@ -38,6 +38,7 @@
 #include "webview.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -460,17 +461,37 @@ struct Doc {
 
 struct App {
   webview_t w = nullptr;
+  FILE *log = nullptr;      // --selftest also writes here, see say()
   std::vector<Doc> docs;
   std::string page_path;   // the composed page in the temp folder
   std::string pending;     // last text the page sent for the active document
   int active = 0;
   std::string pending_open;  // path handed to the page, awaiting its id
   bool selftest = false;
+  bool page_ready = false;
   int selftest_stage = 0;
   int selftest_failures = 0;
 };
 
 static App g;
+
+// Selftest output goes to stdout AND to a file. On Windows this binary is a GUI
+// app so no console follows the user around, and AttachConsole finds nothing to
+// attach to on a CI runner - the first Windows run failed with not one line of
+// output, which is not a thing anyone can debug. The file always works.
+static void say(const char *fmt, ...) {
+  va_list a;
+  va_start(a, fmt);
+  std::vfprintf(stdout, fmt, a);
+  va_end(a);
+  std::fflush(stdout);
+  if (g.log) {
+    va_start(a, fmt);
+    std::vfprintf(g.log, fmt, a);
+    va_end(a);
+    std::fflush(g.log);
+  }
+}
 
 static Doc *find_doc(int id) {
   for (auto &d : g.docs) {
@@ -514,10 +535,10 @@ static void run_selftest_stage();
 
 static void report_selftest(const std::string &name, const std::string &json) {
   bool ok = json.find("\"ok\":true") != std::string::npos;
-  std::printf("  %-10s %s\n", name.c_str(), ok ? "PASS" : "FAIL");
+  say("  %-10s %s\n", name.c_str(), ok ? "PASS" : "FAIL");
   if (!ok) {
     g.selftest_failures++;
-    std::printf("    %s\n", json.c_str());
+    say("    %s\n", json.c_str());
   }
   if (name != "smoke") return;
 
@@ -529,17 +550,17 @@ static void report_selftest(const std::string &name, const std::string &json) {
   json_field(json, "serialized", &got);
   std::string want = resource("golden_sample_md");
   if (got.empty()) {
-    std::printf("  %-10s NO SERIALIZATION RETURNED\n", "golden");
+    say("  %-10s NO SERIALIZATION RETURNED\n", "golden");
     g.selftest_failures++;
     return;
   }
   if (got == want) {
-    std::printf("  %-10s matches golden-sample.md exactly\n", "golden");
+    say("  %-10s matches golden-sample.md exactly\n", "golden");
     return;
   }
   g.selftest_failures++;
-  std::printf("  %-10s DRIFTED from golden-sample.md (%zu bytes, expected %zu)\n",
-              "golden", got.size(), want.size());
+  say("  %-10s DRIFTED from golden-sample.md (%zu bytes, expected %zu)\n",
+      "golden", got.size(), want.size());
   // Print the first difference in full. A CI log is the only debugger anyone
   // gets here, so it has to say WHERE, not just that something moved.
   size_t at = 0;
@@ -555,9 +576,9 @@ static void report_selftest(const std::string &name, const std::string &json) {
   };
   size_t bol = want.rfind('\n', at);
   bol = (bol == std::string::npos) ? 0 : bol + 1;
-  std::printf("             first difference at byte %zu, line %zu\n", at, line);
-  std::printf("             expected: %s\n", slice(want, bol).c_str());
-  std::printf("             actual:   %s\n", slice(got, std::min(bol, got.size())).c_str());
+  say("             first difference at byte %zu, line %zu\n", at, line);
+  say("             expected: %s\n", slice(want, bol).c_str());
+  say("             actual:   %s\n", slice(got, std::min(bol, got.size())).c_str());
 }
 
 // --------------------------------------------------------------- the bridge
@@ -571,6 +592,8 @@ static void on_page_message(const char *id, const char *req, void *) {
     webview_return(g.w, id, 1, "\"bad message\"");
     return;
   }
+
+  if (type == "ready") g.page_ready = true;
 
   if (type == "opened") {
     // The page has taken the document and given it an id. Bind the path to it.
@@ -694,7 +717,7 @@ static void run_selftest_stage() {
   };
   const int n = static_cast<int>(sizeof stages / sizeof stages[0]);
   if (g.selftest_stage >= n) {
-    std::printf("%s\n", g.selftest_failures ? "SELFTEST FAILED" : "selftest: all pass");
+    say("%s\n", g.selftest_failures ? "SELFTEST FAILED" : "selftest: all pass");
     webview_terminate(g.w);
     return;
   }
@@ -807,6 +830,7 @@ int main(int argc, char **argv) {
     std::string a = argv[i];
     if (a == "--selftest") {
       g.selftest = true;
+      g.log = std::fopen("glyph-selftest.log", "w");
     } else if (a == "--version") {
       std::printf("Glyph portable shell, webview %d.%d.%d\n",
                   webview_version()->version.major, webview_version()->version.minor,
@@ -847,14 +871,13 @@ int main(int argc, char **argv) {
   if (!g.w) {
     // On Windows this is a machine with no Evergreen WebView2 runtime. Every
     // call below would dereference null, so say what is wrong instead.
-    std::fprintf(stderr,
-                 "glyph: could not create the web view.\n"
+    say("glyph: could not create the web view.\n"
 #if defined(_WIN32)
-                 "This needs the Microsoft Edge WebView2 runtime, which is on\n"
-                 "Windows 11 and most Windows 10 machines already. Install it from\n"
-                 "https://developer.microsoft.com/microsoft-edge/webview2/\n"
+        "This needs the Microsoft Edge WebView2 runtime, which is on Windows 11\n"
+        "and most Windows 10 machines already. Install it from\n"
+        "https://developer.microsoft.com/microsoft-edge/webview2/\n"
 #else
-                 "This needs WebKitGTK (libwebkit2gtk-4.1-0) and a running display.\n"
+        "This needs WebKitGTK (libwebkit2gtk-4.1-0) and a running display.\n"
 #endif
     );
     return 1;
@@ -867,11 +890,23 @@ int main(int argc, char **argv) {
 #endif
   webview_navigate(g.w, file_url(g.page_path, false).c_str());
 
-  if (g.selftest) std::printf("glyph selftest (" GLYPH_PLATFORM ")\n");
+  if (g.selftest) say("glyph selftest (" GLYPH_PLATFORM ")\n");
   // The selftest starts when the page reports "ready", not on a timer.
 
   webview_run(g.w);
   webview_destroy(g.w);
   std::remove(g.page_path.c_str());
+
+  // A selftest that never heard from the page is a FAILURE, and it needs to say
+  // which half broke: the window closing on its own with nothing reported is
+  // otherwise indistinguishable from a suite failing, and both just exit 1.
+  if (g.selftest && !g.page_ready) {
+    say("SELFTEST FAILED: the interface never reported ready.\n"
+        "The window opened and closed without the page loading. Usually the\n"
+        "engine could not start, or it could not read the composed page at\n"
+        "%s\n", g.page_path.c_str());
+    g.selftest_failures++;
+  }
+  if (g.log) std::fclose(g.log);
   return g.selftest_failures ? 1 : 0;
 }
