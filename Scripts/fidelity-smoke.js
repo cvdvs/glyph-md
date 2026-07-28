@@ -10,7 +10,7 @@
   const out = window.glyphGetText();
 
   // Nothing the author wrote may disappear.
-  for (let i = 1; i <= 9; i++) {
+  for (let i = 1; i <= 10; i++) {
     r["fid" + i] = out.indexOf("FID-" + i) >= 0;
   }
 
@@ -19,7 +19,14 @@
     out.split("\n").filter((l) => l.trim() === "&nbsp;").length >= 2;
   r.headingKept = /^##\s+FID-9/m.test(out);
   r.fenceKept = out.indexOf("```python") >= 0;
-  r.tableKept = (out.match(/^\|/gm) || []).length >= 4;
+  r.tableKept = (out.match(/^\|/gm) || []).length >= 5;
+  // A pipe inside [[target|alias]] is part of the link, not a column break.
+  // Both forms must survive untouched — rewriting one into the other would
+  // change the file on every save.
+  r.aliasedWikilinkKept = out.indexOf("[[target-one|ALIAS]]") >= 0;
+  r.escapedWikilinkKept = out.indexOf("[[target-two\\|ALIAS2]]") >= 0;
+  r.tableColumnsIntact =
+    [...document.querySelectorAll("#md tr")].every((row) => row.children.length === 2);
 
   // Stability: a second pass must not keep changing the document, or every open
   // would rewrite the file again.

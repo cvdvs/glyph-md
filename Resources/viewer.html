@@ -654,14 +654,21 @@ const wikilink = {
     return { type: "wikilink", raw: m[0], embed: m[1] === "!", target: m[2] };
   },
   renderer(token) {
-    const parts = token.target.split("|");
-    const target = parts[0].trim();
+    // Two kinds of escaped pipe can appear here. U+E000 is one guardInput added
+    // so the table row would parse — it must come back as a plain pipe. A
+    // backslash is the author's own escaping, which Obsidian expects inside
+    // tables, so it is written back exactly as they wrote it.
+    const rawTarget = token.target.replace(/\uE000/g, "|").replace(/\uE001/g, "\\|");
+    const shown = rawTarget.replace(/\\\|/g, "|");
+    const raw = (token.embed ? "!" : "") + "[[" + rawTarget + "]]";
+    const parts = shown.split("|");
+    const target0 = parts[0].trim();
     const alias = parts.length > 1 ? parts.slice(1).join("|").trim() : null;
     if (token.embed && /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i.test(target)) {
       const w = alias && /^\d+$/.test(alias) ? ` width="${alias}"` : "";
-      return `<img src="${esc(encodeURI(target))}"${w} alt="${esc(target)}" data-raw="${esc(token.raw)}">`;
+      return `<img src="${esc(encodeURI(target0))}"${w} alt="${esc(target0)}" data-raw="${esc(raw)}">`;
     }
-    return `<span class="wikilink" data-raw="${esc(token.raw)}">${esc(alias || target)}</span>`;
+    return `<span class="wikilink" data-raw="${esc(raw)}">${esc(alias || target0)}</span>`;
   },
 };
 
@@ -755,6 +762,19 @@ function guardInput(src) {
     if (/^(\s{4,}|\t)/.test(line)) return line;
 
     let out = line.replace(SWALLOWING_TAGS, (m, slash, tag) => "&lt;" + slash + tag);
+
+    // A table row containing [[target|alias]] loses everything after that pipe,
+    // because GFM reads it as a column break. Escaping it for the parser fixes
+    // the row; the serializer unescapes on the way out, so the file keeps the
+    // author's original syntax byte for byte.
+    if (/^\s{0,3}\|/.test(out)) {
+      // The table parser consumes a backslash escape when it splits cells, so
+      // the author's "\\|" cannot be recovered later — both forms are marked
+      // here and restored in the renderer. U+E001 was written by the author,
+      // U+E000 by us.
+      out = out.replace(/\[\[[^\[\]\n]*\]\]/g, (link) =>
+        link.replace(/\\\|/g, "\uE001").replace(/\|/g, "\uE000"));
+    }
 
     let stars = 0, unders = 0;
     for (let i = 0; i < out.length; i++) {
@@ -1229,8 +1249,14 @@ function serializeList(listEl, indent, ordered) {
 function serializeTable(table) {
   const rows = [...table.querySelectorAll("tr")];
   if (!rows.length) return "";
+  // Escape pipes that would break the row, but leave the ones inside a wikilink
+  // alone — those are the author's syntax and re-escaping them would rewrite the
+  // file on every save.
+  const escapePipes = (t) => t.split(/(\[\[[^\]]*\]\])/)
+    .map((part, i) => (i % 2 ? part : part.replace(/\|/g, "\\|")))
+    .join("");
   const cells = (r) => [...r.children].map(
-    (c) => serializeInline(c).replace(/\|/g, "\\|").replace(/\n/g, " ").trim() || " "
+    (c) => escapePipes(serializeInline(c)).replace(/\n/g, " ").trim() || " "
   );
   const header = cells(rows[0]);
   let out = "| " + header.join(" | ") + " |\n";

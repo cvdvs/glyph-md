@@ -16,7 +16,8 @@ FID-2 the blank answer line above is deliberate and must survive.
 
 | ID | Note |
 | --- | --- |
-| [[target-one\|ALIAS]] | FID-3 an aliased wikilink in a table cell |
+| [[target-one|ALIAS]] | FID-3 an aliased wikilink in a table cell, unescaped |
+| [[target-two\|ALIAS2]] | FID-10 the same thing already escaped |
 | plain | FID-4 an ordinary row |
 
 ```python
