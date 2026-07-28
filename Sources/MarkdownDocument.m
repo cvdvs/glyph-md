@@ -70,6 +70,7 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
 @property (nonatomic, strong) NSToolbarItem *toggleItem;
 @property (nonatomic, assign) BOOL editing;
 @property (nonatomic, assign) BOOL pageReady;
+@property (nonatomic, strong) NSURL *expectedURL;   // the one load we permit
 @end
 
 @implementation MarkdownDocument
@@ -154,10 +155,12 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
 
     // Reading pane
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-    // Lets the rendered page load images that sit next to the .md file on disk.
-    @try {
-        [config.preferences setValue:@YES forKey:@"allowFileAccessFromFileURLs"];
-    } @catch (NSException *e) {}
+    // Deliberately NOT setting allowFileAccessFromFileURLs. Images next to the
+    // note resolve through the base URL and load fine without it; what the
+    // preference actually grants is script in a file:// document the ability to
+    // read every other file:// URL on the machine. Measured: with it on, a note
+    // could read a sibling file and /etc/hosts; with it off, both are blocked and
+    // local and data: images still display.
     GlyphScriptProxy *proxy = [[GlyphScriptProxy alloc] init];
     proxy.target = self;
     [config.userContentController addScriptMessageHandler:proxy name:@"glyph"];
@@ -778,6 +781,14 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
 
 - (void)userContentController:(WKUserContentController *)userContentController
       didReceiveScriptMessage:(WKScriptMessage *)message {
+    // Message handlers are installed per-configuration, not per-frame, so any
+    // frame the page can create would otherwise reach this bridge — and this
+    // bridge rewrites the user's file and opens URLs as the user. The viewer has
+    // no legitimate subframes.
+    WKFrameInfo *frame = message.frameInfo;
+    if (message.webView != self.webView || !frame.isMainFrame) return;
+    if (![frame.securityOrigin.protocol isEqualToString:@"file"] &&
+        frame.securityOrigin.protocol.length > 0) return;
     if (![message.body isKindOfClass:[NSDictionary class]]) return;
     NSDictionary *body = message.body;
     NSString *type = body[@"type"];
@@ -838,7 +849,23 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
 - (void)loadTemplateHTML {
     self.pageReady = NO;
     NSURL *base = self.fileURL ? self.fileURL.URLByDeletingLastPathComponent : nil;
-    [self.webView loadHTMLString:[MarkdownDocument viewerTemplate] baseURL:base];
+    self.expectedURL = base;
+
+    // A fresh nonce every load, so the page's own scripts run and anything a
+    // document manages to inject does not — the layer that keeps a future
+    // sanitizer bug from mattering. Substituted here rather than in
+    // +viewerTemplate, which is cached once for the life of the process.
+    uint8_t bytes[16];
+    arc4random_buf(bytes, sizeof bytes);
+    NSString *nonce = [[NSData dataWithBytes:bytes length:sizeof bytes]
+                       base64EncodedStringWithOptions:0];
+    NSString *tpl = [MarkdownDocument viewerTemplate];
+    tpl = [tpl stringByReplacingOccurrencesOfString:@"/*__CSP_NONCE__*/" withString:nonce];
+    NSString *src = [@"nonce-" stringByAppendingString:nonce];
+    tpl = [tpl stringByReplacingOccurrencesOfString:@"/*__CSP_SCRIPT__*/" withString:src];
+    tpl = [tpl stringByReplacingOccurrencesOfString:@"/*__CSP_STYLE__*/" withString:src];
+
+    [self.webView loadHTMLString:tpl baseURL:base];
 }
 
 - (void)renderMarkdown {
@@ -867,11 +894,19 @@ static BOOL GlyphURLIsSafeToOpen(NSURL *url) {
         decisionHandler(WKNavigationActionPolicyCancel);
         return;
     }
+    // No subframes are legitimate here, and a subframe would carry the file
+    // origin and reach the bridge while bypassing the page's own policy.
+    if (navigationAction.targetFrame && !navigationAction.targetFrame.isMainFrame) {
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
     // The page is loaded once with loadHTMLString and never navigates again.
-    // Anything else — a form post, a meta refresh, a redirect a document tried to
-    // trigger — is the document trying to leave, and leaving means exfiltration.
-    BOOL isInitialLoad = !url || [url.scheme.lowercaseString isEqualToString:@"about"] ||
-                         [url isFileURL];
+    // Allowing any file: URL was far too wide: notes arrive inside cloned repos
+    // and unzipped folders, so a sibling .html is the normal case, and opening it
+    // would escape both the sanitizer and the page policy entirely.
+    BOOL isInitialLoad = (url == nil) ||
+                         [url.absoluteString isEqualToString:@"about:blank"] ||
+                         (self.expectedURL && [url isEqual:self.expectedURL]);
     decisionHandler(isInitialLoad ? WKNavigationActionPolicyAllow
                                   : WKNavigationActionPolicyCancel);
 }

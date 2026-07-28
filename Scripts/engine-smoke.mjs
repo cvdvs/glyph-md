@@ -15,6 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
@@ -70,9 +71,19 @@ let initial = "window.__initial = " + embed(doc) + ";";
 if (chromeMode) {
   initial = 'window.__glyphChrome = true;\nwindow.__initialName = "selftest.md";\n' + initial;
 }
-const page = viewer
+let page = viewer
   .replace("/*__MARKED_JS__*/", () => marked)
   .replace("/*__INITIAL__*/", () => initial);
+
+// Pin the inline blocks by hash exactly as Scripts/make-preview.py does, so the
+// harness exercises the real shipping Content-Security-Policy rather than a
+// weakened one. Computed after substitution, over the bytes between the tags.
+const sha = (t) => "sha256-" + createHash("sha256").update(t, "utf8").digest("base64");
+page = page.replaceAll(' nonce="/*__CSP_NONCE__*/"', "");
+const scripts = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+const styles = [...page.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
+page = page.replace("'/*__CSP_SCRIPT__*/'", scripts.map((b) => "'" + sha(b) + "'").join(" "));
+page = page.replace("'/*__CSP_STYLE__*/'", styles.map((b) => "'" + sha(b) + "'").join(" "));
 
 // Written into the fixtures dir so relative image paths (pic.png) resolve,
 // which is what the imageResolves assertion depends on.

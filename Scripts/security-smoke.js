@@ -55,7 +55,7 @@
   r.keepsSub = md.querySelectorAll("sub").length > 0;
   r.keepsKbd = md.querySelectorAll("kbd").length > 0;
   r.keepsHeading = md.querySelectorAll("h1").length > 0;
-  r.keepsText = md.textContent.indexOf("More normal text") >= 0;
+  r.keepsText = md.textContent.indexOf("KEEP-4 more normal text") >= 0;
 
   // A payload must not be able to persist itself back into the user file.
   const ser = window.glyphSerialize();
@@ -68,6 +68,19 @@
     && ser.indexOf("data-alt") < 0;
   // The author's own image markdown must survive untouched.
   r.imageRoundTrips = /!\[remote beacon\]\(https:\/\/evil\.example\/beacon\.png\)/.test(ser);
+
+  // A document must not be able to choose which of the user's paragraphs are
+  // deleted on save (class="props" made serializeBlock return null), nor supply
+  // its own data-raw (written to the file verbatim: reads as one thing, saves as
+  // another), nor swallow the rest of the note with an unclosed raw-text tag.
+  r.noDataRawInjection = ser.indexOf("INJECTEDRAW") < 0;
+  // Attack payloads are meant to disappear; the user's PROSE never is. Every
+  // KEEP- line in the fixture is ordinary text and must survive a save, including
+  // the ones sitting after a malformed tag.
+  // Hardcoded rather than read from window.__initial, because the macOS app
+  // loads the template with no embedded document and renders it separately.
+  const KEEPS = ["KEEP-1", "KEEP-2", "KEEP-3", "KEEP-4"];
+  r.noProseDeleted = KEEPS.every((k) => ser.indexOf(k) >= 0);
 
   r.ok = Object.keys(r).every((k) => r[k] === true);
   return JSON.stringify(r);

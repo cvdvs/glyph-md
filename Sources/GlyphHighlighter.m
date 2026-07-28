@@ -508,12 +508,19 @@ static BOOL IsTableDelimiter(NSString *line) {
                  inRange:(NSRange)scope
                skipColor:(BOOL)skipColor {
     if (scope.length == 0 || NSMaxRange(scope) > text.length) return;
+    // A single line this long is machine-generated; inline rules add nothing and
+    // the scan is what a hostile file would exploit.
+    if (text.length > 20000) return;
 
     static NSArray<NSRegularExpression *> *rules;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         rules = @[
-            RX(@"(`+)([^`]+?)(\\1)"),                                  // 0 inline code
+            RX(@"(`{1,10})([^`]{1,500}?)(\\1)"),                       // 0 inline code
+            // Bounded deliberately: the unbounded form is quadratic — the
+            // backreference restarts the scan at every position inside a
+            // backtick run, and NSRegularExpression has no timeout, so a long
+            // run of backticks froze the raw view for a minute on ⌘E.
             // One rule for bold, italic and both. Separate ** and * rules would
             // fight: the ** rule's rejected candidate match consumes the opening
             // asterisk that the * rule needs, and the italic silently disappears.

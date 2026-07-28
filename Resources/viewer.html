@@ -1,9 +1,10 @@
 <!doctype html>
 <html>
 <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src '/*__CSP_SCRIPT__*/'; style-src '/*__CSP_STYLE__*/'; img-src 'self' data: file:; connect-src 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'">
 <meta charset="utf-8">
 <meta name="color-scheme" content="light dark">
-<style>
+<style nonce="/*__CSP_NONCE__*/">
   :root {
     --bg: #ffffff;
     --fg: #26272b;
@@ -615,8 +616,8 @@
 </head>
 <body>
 <div id="content"><article id="md"></article></div>
-<script>/*__MARKED_JS__*/</script>
-<script>
+<script nonce="/*__CSP_NONCE__*/">/*__MARKED_JS__*/</script>
+<script nonce="/*__CSP_NONCE__*/">
 "use strict";
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => (
@@ -667,6 +668,61 @@ const obsidianHighlight = {
 
 marked.use({ extensions: [wikilink, obsidianHighlight] });
 
+/* ---------- input guards ----------
+   Two problems that fire on OPEN, before anything else runs.
+
+   1. Content destruction. An unclosed raw-text tag (<style>, <script>, ...)
+      makes marked swallow the rest of the document as that tag's contents; the
+      sanitizer then removes it, and the serializer writes the shortened result
+      back to the file. A malformed note therefore DELETES the user's text.
+      Measured before this guard: a 10-paragraph note kept 2 paragraphs.
+
+      The invariant is: GLYPH NEVER DELETES CONTENT. IT MAY ESCAPE IT SO IT
+      STAYS INERT. Escaping the opening bracket makes these render as visible
+      literal text — nothing is swallowed, nothing is lost, and the result is
+      stable on the next open. This is content preservation, not a security
+      control: the DOM sanitizer remains authoritative, so a miss here is free.
+
+   2. Quadratic parsing. marked's emphasis tokenizer is O(n^2) in the number of
+      * or _ on a line, so a long run freezes the app on open with no progress
+      and no cancel. An LLM emitting a wall of punctuation is enough to trigger
+      it; nobody has to be malicious. 200 emphasis characters on one line is 100
+      bold spans — real prose never comes close.
+
+   Both skip fenced and indented code, where escaping would put visible
+   backslashes into the user's document. */
+
+const SWALLOWING_TAGS =
+  /<(\/?)(script|style|iframe|object|embed|noscript|xmp|textarea|template|title|base|link|meta|noembed|noframes|plaintext)\b/gi;
+const EMPHASIS_LIMIT = 200;
+
+function guardInput(src) {
+  let fence = null;
+  return String(src || "").split("\n").map((line) => {
+    const f = /^\s{0,3}(```+|~~~+)/.exec(line);
+    if (f) {
+      if (fence && line.trim().startsWith(fence)) fence = null;
+      else if (!fence) fence = f[1][0].repeat(3);
+      return line;
+    }
+    if (fence) return line;
+    if (/^(\s{4,}|\t)/.test(line)) return line;
+
+    let out = line.replace(SWALLOWING_TAGS, (m, slash, tag) => "&lt;" + slash + tag);
+
+    let stars = 0, unders = 0;
+    for (let i = 0; i < out.length; i++) {
+      const c = out.charCodeAt(i);
+      if (c === 42) stars++;
+      else if (c === 95) unders++;
+    }
+    if (stars > EMPHASIS_LIMIT || unders > EMPHASIS_LIMIT) {
+      out = out.replace(/[*_]/g, (m) => "\\" + m);
+    }
+    return out;
+  }).join("\n");
+}
+
 /* ---------- sanitizer ----------
    Markdown allows raw HTML and marked passes it straight through, so a document
    is untrusted input: notes arrive from model output, downloads and cloned
@@ -691,7 +747,7 @@ const SAFE_TAGS = new Set([
 // Per-element attribute allowlist. Deliberately excludes id and name (DOM
 // clobbering), style (CSS injection and url() exfiltration), and every on* handler.
 const SAFE_ATTRS = {
-  "*": new Set(["class", "title", "lang", "dir"]),
+  "*": new Set(["title", "lang", "dir"]),
   a: new Set(["href"]),
   img: new Set(["src", "alt", "width", "height", "data-raw"]),
   input: new Set(["type", "checked", "disabled"]),
@@ -703,20 +759,36 @@ const SAFE_ATTRS = {
   li: new Set(["value"]),
   details: new Set(["open"]),
   span: new Set(["data-raw"]),
+  // Validated in the pre-loop step above; only "language-xxx" ever survives,
+  // and the serializer reads it to emit the fence language.
+  code: new Set(["class"]),
 };
 
 function safeURL(value, forImage) {
   const v = String(value || "").trim();
-  // Strip control characters first: "java\tscript:" and friends are still parsed
-  // as a scheme by browsers.
+  // Strip control characters before looking at the scheme: "java\tscript:" and
+  // "&#x6a;avascript:" are still parsed as a scheme by browsers.
   const flat = v.replace(/[\u0000-\u0020\u00a0\u2028\u2029]/g, "").toLowerCase();
-  if (/^(javascript|vbscript|livescript|mocha):/.test(flat)) return null;
-  if (flat.startsWith("data:")) {
-    // Images may be embedded (the standalone build does this); nothing else may.
-    return forImage && /^data:image\/(png|jpe?g|gif|webp|avif|bmp|svg\+xml);/.test(flat) ? v : null;
+  const scheme = /^([a-z][a-z0-9+.-]*):/.exec(flat);
+  // No scheme at all — a relative path, an anchor, a query — is fine.
+  if (!scheme) return v;
+  const name = scheme[1];
+  if (forImage) {
+    // http/https are kept so the URL survives into the file untouched; the
+    // caller then holds the image behind a click rather than fetching it.
+    if (name === "http" || name === "https" || name === "file") return v;
+    return /^data:image\/(png|jpe?g|gif|webp|avif|bmp|svg\+xml)[;,]/.test(flat) ? v : null;
   }
-  if (/^(file|blob|about):/.test(flat)) return forImage ? v : null;
-  return v;
+  // Allowlist, not deny-list: an unknown scheme is refused rather than passed
+  // through, so tomorrow's scheme cannot become today's hole.
+  return (name === "http" || name === "https" || name === "mailto") ? v : null;
+}
+
+// data-raw is emitted by the wikilink renderer and written back to the file
+// verbatim by the serializer, so a document that supplies its own would choose
+// what gets saved — text that reads as one thing and saves as another.
+function safeDataRaw(value) {
+  return /^!?\[\[[^\[\]\n]{1,300}\]\]$/.test(String(value || "")) ? value : null;
 }
 
 function scrubNode(root) {
@@ -729,6 +801,18 @@ function scrubNode(root) {
     const tag = el.tagName.toLowerCase();
     if (!SAFE_TAGS.has(tag)) { drop.push(el); return; }
 
+    // Handled before the loop: the serializer and the render passes key off
+    // class names, so a document could use them to choose which of the user's
+    // paragraphs are deleted on save (class="props" makes serializeBlock return
+    // null), turn a paragraph into a callout, or forge the remote-image notice.
+    // Only the code fence language survives, because the serializer reads it.
+    const cls = el.getAttribute("class");
+    if (cls !== null) {
+      const keep = tag === "code" && /^language-[\w+-]+$/.test(cls.trim());
+      if (keep) el.setAttribute("class", cls.trim());
+      else el.removeAttribute("class");
+    }
+
     const allowed = SAFE_ATTRS[tag];
     [...el.attributes].forEach((attr) => {
       const name = attr.name.toLowerCase();
@@ -736,6 +820,10 @@ function scrubNode(root) {
       const ok = (SAFE_ATTRS["*"].has(name) || (allowed && allowed.has(name)))
         && !name.startsWith("on");
       if (!ok) { el.removeAttribute(attr.name); return; }
+      if (name === "data-raw") {
+        if (safeDataRaw(attr.value) === null) el.removeAttribute(attr.name);
+        return;
+      }
       if (name === "href" || name === "src") {
         const safe = safeURL(attr.value, tag === "img");
         if (safe === null) { el.removeAttribute(attr.name); return; }
@@ -1000,7 +1088,13 @@ function serializeInline(node) {
   let out = "";
   node.childNodes.forEach((ch) => {
     if (ch.nodeType === Node.TEXT_NODE) {
-      out += ch.nodeValue.replace(/\u00a0/g, " ").replace(/\u200b/g, "");
+      out += ch.nodeValue
+        .replace(/\u00a0/g, " ")
+        .replace(/\u200b/g, "")
+        // marked escapes stray markup into text; writing it back raw would arm
+        // it for the next open (and for every other renderer of this file).
+        // "a < b" is untouched because only a tag-shaped bracket is escaped.
+        .replace(/<(?=\/?[a-zA-Z])/g, "&lt;");
       return;
     }
     if (ch.nodeType !== Node.ELEMENT_NODE) return;
@@ -1647,7 +1741,7 @@ window.renderMarkdown = function (src) {
   try {
     // Sanitize before anything reaches the document. Our own trusted markup —
     // callout icons, tag chips, the Properties panel — is added afterwards.
-    mdHtml = sanitizeHTML(marked.parse(body));
+    mdHtml = sanitizeHTML(marked.parse(guardInput(body)));
   } catch (e) {
     mdHtml = `<pre>${esc(body)}</pre>`;
   }
@@ -1655,6 +1749,9 @@ window.renderMarkdown = function (src) {
   const content = document.getElementById("content");
   content.innerHTML = html;
   const md = document.getElementById("md");
+  // Restore the class the sanitizer stripped, only where our own renderer put a
+  // validated data-raw. A document cannot reach this: its data-raw was dropped.
+  md.querySelectorAll("span[data-raw]").forEach((el) => el.classList.add("wikilink"));
   transformCallouts(md);
   tagTaskItems(md);
   styleTags(md);

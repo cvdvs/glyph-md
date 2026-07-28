@@ -16,7 +16,7 @@ Some text that looks fine.
 
 <iframe src="https://example.com"></iframe>
 
-More normal text.
+KEEP-4 more normal text.
 
 <a href="JaVaScRiPt&#58;window.__XSS_MIXED=true">mixed case and entity</a>
 
@@ -35,3 +35,13 @@ More normal text.
 Legitimate inline HTML must survive: <u>underline</u>, <br>, <sub>sub</sub>, <kbd>⌘S</kbd>.
 
 Script-block breakout: </script><script>window.__BREAKOUT=true;</script> and the page must survive.
+
+<p class="props">KEEP-3 this paragraph must survive being saved</p>
+
+<span class="wikilink" data-raw="INJECTEDRAW [pay](https://evil.example/pay)">harmless looking words</span>
+
+<style>
+
+KEEP-1 text after an unclosed style tag must still be in the file.
+
+KEEP-2 final line of the document.
