@@ -48,6 +48,19 @@
   r.softWrapNotPromoted = /Soft wrap A\nsoft wrap B/.test(out);
   r.noJoinerLeaked = out.indexOf("\u2060") < 0;
 
+  // A code span that contains a backtick must survive verbatim; a fixed single
+  // backtick would downgrade it to code "a" plus a stray backtick.
+  r.inlineBacktickKept = out.indexOf("FID-12 a`b") >= 0;
+  // A fenced block that shows a ``` example must stay ONE block; a fixed
+  // three-backtick fence lets the inner fence close it early and split it.
+  r.nestedFenceKept = out.indexOf("FID-11") >= 0;
+  // The DOM here reflects the re-rendered `out` (line above). The inner ``` must
+  // still be code CONTENT, not a fence that split the block into paragraphs.
+  r.nestedFenceStaysOneBlock = [...document.querySelectorAll("#md pre code")]
+    .some((c) => c.textContent.indexOf("FID-11") >= 0 && c.textContent.indexOf("```") >= 0);
+  r.inlineBacktickStaysCode = [...document.querySelectorAll("#md code")]
+    .some((c) => c.textContent.indexOf("FID-12 a`b") >= 0);
+
   r.ok = Object.keys(r).every((k) => r[k] === true);
   return JSON.stringify(r);
 })()

@@ -37,3 +37,11 @@ line two follows.
 
 Soft wrap A
 soft wrap B.
+
+Inline code holding a backtick: ``FID-12 a`b`` must round-trip, not downgrade.
+
+````
+```
+FID-11 a triple-backtick example lives inside this block and must stay one block
+```
+````

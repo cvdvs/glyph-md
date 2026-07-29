@@ -1161,6 +1161,28 @@ function styleTags(root) {
 
 /* ---------- serializer: formatted DOM -> markdown ---------- */
 
+// The backtick fence for a code span or fenced block, one longer than the
+// longest backtick run in the content (CommonMark). A fixed-length fence is a
+// silent corruption: a single backtick cannot wrap text that itself contains a
+// backtick (`` `a`b` `` reads as code "a" then a stray backtick, not code
+// "a`b"), and a three-backtick fence around a body that shows a ``` example
+// closes early and splits one block into pieces on the next render.
+function backtickFence(content, min) {
+  const runs = content.match(/`+/g);
+  const n = runs ? Math.max(...runs.map((r) => r.length)) + 1 : min;
+  return "`".repeat(Math.max(min, n));
+}
+
+// An inline code span whose delimiter adapts to its content, with a space pad
+// when the content starts or ends with a backtick so the delimiters stay
+// distinct (the reader strips one padding space from each end).
+function serializeCodeSpan(text) {
+  const fence = backtickFence(text, 1);
+  const pad = /^`|`$/.test(text) ||
+    (/^ /.test(text) && / $/.test(text) && text.trim() !== "");
+  return fence + (pad ? " " + text + " " : text) + fence;
+}
+
 // data-remote-src / data-local-src / data-alt / .remote-img are ours, added for
 // display only. The file must get back exactly the image the author wrote.
 function serializeImg(el) {
@@ -1215,7 +1237,7 @@ function serializeInline(node) {
       case "U": out += `<u>${serializeInline(ch)}</u>`; break;
       case "DEL": case "S": case "STRIKE": out += `~~${serializeInline(ch)}~~`; break;
       case "MARK": out += `==${serializeInline(ch)}==`; break;
-      case "CODE": out += "`" + ch.textContent + "`"; break;
+      case "CODE": out += serializeCodeSpan(ch.textContent); break;
       case "A": {
         const href = ch.getAttribute("href") || "";
         out += `[${serializeInline(ch)}](${href})`;
@@ -1377,7 +1399,8 @@ function serializeBlock(el) {
       const langMatch = code ? /language-([\w+-]+)/.exec(code.className || "") : null;
       const lang = langMatch ? langMatch[1] : "";
       const body = (code || el).textContent.replace(/\n$/, "");
-      return "```" + lang + "\n" + body + "\n```";
+      const fence = backtickFence(body, 3);
+      return fence + lang + "\n" + body + "\n" + fence;
     }
     case "TABLE": return serializeTable(el);
     case "IMG": return serializeImg(el);
