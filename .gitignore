@@ -10,3 +10,7 @@ shell/resources.h
 shell/build/
 # Pinned WebView2 SDK, fetched by Scripts/fetch-webview2.ps1.
 shell/vendor/webview2/
+
+# Preview binary built directly on macOS (shell/build/ is the real output).
+shell/glyph-mac
+shell/glyph-mac.dSYM/
