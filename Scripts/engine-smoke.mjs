@@ -252,6 +252,15 @@ if (chromeMode) {
       }
       document.getElementById("glyph-newtab").click();
       r.newTabOpens = document.querySelectorAll(".glyph-tab").length === 2;
+
+      // A document too large to render live must fall back to the raw view
+      // instead of freezing the window parsing it (the portable shell has no
+      // native editor to fall back to, as the macOS app does).
+      const huge = "word ".repeat(70000);  // 350000 chars, over the render limit
+      document.body.classList.remove("glyph-raw");
+      window.renderMarkdown(huge);
+      r.bigFileGoesRaw = document.body.classList.contains("glyph-raw");
+      r.bigFileTextIntact = document.getElementById("glyph-raw").value.length > 300000;
       return JSON.stringify(r);
     })()`,
     returnByValue: true,

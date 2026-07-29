@@ -1901,7 +1901,20 @@ function attachEditing(md) {
   });
 }
 
+// Past this size, both marked and the sanitizer run long enough on the main
+// thread to freeze the window (a 3.3MB note never finished). The macOS app
+// guards this natively and opens such files raw; the portable shell has no
+// native editor, so the chrome layer installs __glyphRawFallback and the render
+// bails to the raw textarea instead of parsing. macOS never sets that hook (and
+// never sends a document this large here), so it is unaffected.
+const GLYPH_RENDER_LIMIT = 300000;
+
 window.renderMarkdown = function (src) {
+  if (typeof window.__glyphRawFallback === "function" &&
+      src && src.length > GLYPH_RENDER_LIMIT) {
+    window.__glyphRawFallback(src);
+    return;
+  }
   const y = window.scrollY;
   const { fm, body, prefix } = splitFrontmatter(src || "");
   curPrefix = prefix;
@@ -2180,6 +2193,15 @@ window.__glyphInstallChrome = function () {
   rawArea.id = "glyph-raw";
   rawArea.spellcheck = false;
   document.body.appendChild(rawArea);
+
+  // renderMarkdown calls this when a document is too large to render live, so
+  // the portable shell shows it raw instead of freezing the window parsing it.
+  // The document's text is already in the active tab, so save still works.
+  window.__glyphRawFallback = function (text) {
+    document.body.classList.add("glyph-raw");
+    rawArea.value = text;
+    if (typeof paintStatus === "function") paintStatus();
+  };
 
   const status = document.createElement("div");
   status.id = "glyph-status";

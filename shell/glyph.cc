@@ -38,6 +38,7 @@
 #include "webview.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -46,6 +47,7 @@
 #include <string>
 #include <vector>
 
+#include "glyph_docs.h"
 #include "glyph_json.h"
 #include "resources.h"
 
@@ -57,11 +59,15 @@
 #define GLYPH_PLATFORM "win"
 #elif defined(__APPLE__)
 #include <cstdlib>
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #define GLYPH_PLATFORM "mac"
 #else
 #include <gtk/gtk.h>
 #include <cstdlib>
+#include <fcntl.h>
 #include <unistd.h>
 #define GLYPH_PLATFORM "linux"
 #endif
@@ -221,29 +227,103 @@ static bool read_file(const std::string &path, std::string *out) {
   return true;
 }
 
+#if !defined(_WIN32)
+// Write all the bytes to an already-open fd, or fail.
+static bool write_all_fd(int fd, const std::string &data) {
+  const char *p = data.data();
+  size_t left = data.size();
+  while (left) {
+    ssize_t n = ::write(fd, p, left);
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      return false;
+    }
+    p += n;
+    left -= static_cast<size_t>(n);
+  }
+  return true;
+}
+#endif
+
 // Write to a sibling temp file and rename over the target, so a crash or a full
-// disk cannot leave a half-written note where a whole one used to be.
+// disk cannot leave a half-written note where a whole one used to be. On POSIX
+// the temp is opened O_NOFOLLOW so a symlink pre-planted at the temp path by a
+// co-resident process is not followed into a file we should not touch (the temp
+// is beside the user's own note, so this is a narrow local-attacker concern, but
+// it is nearly free to close). O_TRUNC still handles a stale temp from a crash.
 static bool write_file_atomic(const std::string &path, const std::string &data) {
   std::string tmp = path + ".glyph-tmp";
-  {
-    std::ofstream out(GLYPH_PATH(tmp), std::ios::binary | std::ios::trunc);
-    if (!out) return false;
-    out.write(data.data(), static_cast<std::streamsize>(data.size()));
-    out.flush();
-    if (!out) { remove_file(tmp); return false; }
-  }
 #if defined(_WIN32)
+  HANDLE h = CreateFileW(widen(tmp).c_str(), GENERIC_WRITE, 0, nullptr,
+                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return false;
+  DWORD wrote = 0;
+  BOOL ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &wrote, nullptr);
+  CloseHandle(h);
+  if (!ok || wrote != data.size()) { remove_file(tmp); return false; }
   if (!MoveFileExW(widen(tmp).c_str(), widen(path).c_str(), MOVEFILE_REPLACE_EXISTING)) {
     remove_file(tmp);
     return false;
   }
 #else
-  if (std::rename(tmp.c_str(), path.c_str()) != 0) {
-    remove_file(tmp);
-    return false;
-  }
+  int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+  if (fd < 0) return false;
+  if (!write_all_fd(fd, data) || ::close(fd) != 0) { ::unlink(tmp.c_str()); return false; }
+  if (std::rename(tmp.c_str(), path.c_str()) != 0) { ::unlink(tmp.c_str()); return false; }
 #endif
   return true;
+}
+
+// Create a brand-new file, failing if anything already exists at the path and
+// refusing to follow a symlink there. Used for the interface page, which is
+// loaded into the webview and drives the bridge (save / openURL), so a
+// co-resident process must not be able to pre-plant or swap it. Combined with a
+// random, unpredictable filename this closes the temp-page TOCTOU: the attacker
+// cannot guess the name, and even a lucky guess loses the O_EXCL race.
+static bool write_new_file_secure(const std::string &path, const std::string &data) {
+#if defined(_WIN32)
+  HANDLE h = CreateFileW(widen(path).c_str(), GENERIC_WRITE, 0, nullptr,
+                         CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return false;
+  DWORD wrote = 0;
+  BOOL ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &wrote, nullptr);
+  CloseHandle(h);
+  if (!ok || wrote != data.size()) { remove_file(path); return false; }
+  return true;
+#else
+  int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+  if (fd < 0) return false;
+  if (!write_all_fd(fd, data) || ::close(fd) != 0) { ::unlink(path.c_str()); return false; }
+  return true;
+#endif
+}
+
+// Unpredictable hex, for a temp filename a co-resident process cannot guess.
+static std::string random_token() {
+  unsigned char b[12];
+#if defined(_WIN32)
+  for (auto &x : b) x = static_cast<unsigned char>(rand() & 0xff);
+  LARGE_INTEGER t;
+  QueryPerformanceCounter(&t);
+  for (size_t i = 0; i < sizeof b; ++i) {
+    b[i] ^= static_cast<unsigned char>((t.QuadPart >> ((i % 8) * 8)) & 0xff);
+    b[i] ^= static_cast<unsigned char>((GetCurrentProcessId() >> (i % 4)) & 0xff);
+  }
+#else
+  FILE *f = std::fopen("/dev/urandom", "rb");
+  bool ok = f && std::fread(b, 1, sizeof b, f) == sizeof b;
+  if (f) std::fclose(f);
+  if (!ok) {
+    for (auto &x : b) x = static_cast<unsigned char>(rand());
+  }
+#endif
+  static const char *H = "0123456789abcdef";
+  std::string s;
+  for (unsigned char x : b) {
+    s += H[x >> 4];
+    s += H[x & 0x0f];
+  }
+  return s;
 }
 
 #if defined(_WIN32)
@@ -397,8 +477,20 @@ static void open_externally(const std::string &url) {
 static std::vector<std::string> ask_open_paths(webview_t) { return {}; }
 static std::string ask_save_path(webview_t, const std::string &) { return {}; }
 static void open_externally(const std::string &url) {
-  std::string cmd = "open " + url;  // preview build only
-  (void)std::system(cmd.c_str());
+  // NEVER through a shell. The URL comes from an untrusted document, and
+  // std::system("open " + url) handed it to /bin/sh, so a link like
+  // http://h/$(command) ran that command. posix_spawn passes the URL to
+  // /usr/bin/open as one opaque argv element - no shell, no substitution -
+  // exactly as the Linux g_spawn_async path does. action_for_url has already
+  // limited this to http/https/mailto.
+  extern char **environ;
+  const char *argv[] = {"/usr/bin/open", url.c_str(), nullptr};
+  pid_t pid = 0;
+  if (posix_spawn(&pid, "/usr/bin/open", nullptr, nullptr,
+                  const_cast<char *const *>(argv), environ) == 0) {
+    int status = 0;
+    waitpid(pid, &status, 0);  // `open` returns as soon as it hands off
+  }
 }
 
 #else
@@ -507,20 +599,13 @@ static UrlAction action_for_url(const std::string &url, const std::string &doc_d
 
 // ------------------------------------------------------------------ the app
 
-struct Doc {
-  int id = 0;
-  std::string path;  // empty until saved
-  std::string name;
-};
-
 struct App {
   webview_t w = nullptr;
   FILE *log = nullptr;      // --selftest also writes here, see say()
-  std::vector<Doc> docs;
+  Tabs tabs;               // the document/tab model (shell/glyph_docs.h)
   std::string page_path;   // the composed page in the temp folder
-  std::string pending;     // last text the page sent for the active document
-  int active = 0;
-  std::string pending_open;  // path handed to the page, awaiting its id
+  std::string pending;     // last serialized text the page sent for the active doc
+  bool pending_saved = true;  // is g.pending already on disk?
   bool selftest = false;
   bool page_ready = false;
   int selftest_stage = 0;
@@ -547,12 +632,7 @@ static void say(const char *fmt, ...) {
   }
 }
 
-static Doc *find_doc(int id) {
-  for (auto &d : g.docs) {
-    if (d.id == id) return &d;
-  }
-  return nullptr;
-}
+static Doc *find_doc(int id) { return g.tabs.find(id); }
 
 // Everything the page is told to do goes through here so it is escaped once.
 static void call_page(const std::string &fn, const std::vector<std::string> &args) {
@@ -575,12 +655,30 @@ static void open_path_in_page(const std::string &path) {
   // The PAGE mints document ids, in its own counter, and every later message
   // about this document carries the page's id. Inventing one here meant every
   // save missed its document and raised a Save-As for a file that already had
-  // a perfectly good path on disk. So the path is parked and claimed by the id
-  // the page reports back.
-  g.pending_open = abs;
+  // a perfectly good path on disk. So the path is parked and claimed FIFO by the
+  // id the page reports back — a queue, not one slot, so opening several files
+  // at once binds each tab to its own file (Scripts/docs-smoke.cc).
+  g.tabs.park(abs);
   call_page("window.__glyphOpened",
             {js_string(base_of(abs)), js_string(text),
              js_string(file_url(dir_of(abs), true))});
+}
+
+// Persist the active document's latest text to its file. Called when switching
+// away from a tab and when the window closes - the two points where unsaved work
+// would otherwise vanish. The macOS app prompts to save on close; the library
+// gives no window-close hook to raise such a prompt, and losing the owner's
+// edits silently is the worse outcome, so a document that HAS a path is written
+// rather than lost. g.pending is the page's own serialized output (it serializes
+// on a debounce and posts {type:"source"}), so this writes exactly what an
+// explicit Save would. An untitled document has nowhere to go and cannot be
+// flushed here; its edits still need an explicit Save-As.
+static void flush_active() {
+  if (g.pending_saved || g.pending.empty()) return;
+  Doc *d = find_doc(g.tabs.active);
+  if (d && !d->path.empty() && write_file_atomic(d->path, g.pending)) {
+    g.pending_saved = true;
+  }
 }
 
 // ------------------------------------------------------------------ selftest
@@ -688,39 +786,47 @@ static bool selftest_files() {
 
 // --------------------------------------------------------------- the bridge
 
-static void on_page_message(const char *id, const char *req, void *) {
-  // req is the argument array of the bound call; element 0 is our JSON.
+// The handlers below use early returns freely. They must NOT call
+// webview_return - the one wrapper does that once, on every path. webview_bind
+// creates a JS Promise per call and settles it only when webview_return fires,
+// so a branch that returned without it left a Promise pending forever and a
+// permanent entry in the library's promise map: a slow, click-bounded leak.
+static void handle_page_message(const char *req) {
   std::string payload, type;
   if (!json_first_element(std::string(req), &payload) ||
       !json_field(payload, "type", &type)) {
     std::fprintf(stderr, "glyph: unreadable message from the page, ignored\n");
-    webview_return(g.w, id, 1, "\"bad message\"");
     return;
   }
 
   if (type == "ready") g.page_ready = true;
 
   if (type == "opened") {
-    // The page has taken the document and given it an id. Bind the path to it.
+    // The page has taken the document and given it an id. Bind it FIFO to the
+    // oldest parked path.
     std::string ids, name;
     if (!json_field(payload, "id", &ids)) return;
     int docid = std::atoi(ids.c_str());
     json_field(payload, "name", &name);
-    if (find_doc(docid) || g.pending_open.empty()) return;
-    Doc d;
-    d.id = docid;
-    d.path = g.pending_open;
-    d.name = name.empty() ? base_of(d.path) : name;
-    g.docs.push_back(d);
-    g.pending_open.clear();
+    Doc *d = g.tabs.opened(docid, name);
+    if (d && d->name.empty()) d->name = base_of(d->path);
 
   } else if (type == "active") {
     // Which tab is in front decides which folder a relative link resolves
     // against. Without this the shell answered for whichever document opened
     // first, and a link in the second note looked for its target beside the
-    // first one.
+    // first one. Switching away also flushes the outgoing document, so an edit
+    // in a tab is not lost by moving to another tab.
     std::string ids;
-    if (json_field(payload, "id", &ids)) g.active = std::atoi(ids.c_str());
+    if (json_field(payload, "id", &ids)) {
+      int next = std::atoi(ids.c_str());
+      if (next != g.tabs.active) {
+        flush_active();
+        g.tabs.active = next;
+        g.pending.clear();
+        g.pending_saved = true;  // nothing edited in the new tab yet
+      }
+    }
 
   } else if (type == "ready") {
     // The interface is up. Nothing may be evaluated into the page before this.
@@ -728,6 +834,7 @@ static void on_page_message(const char *id, const char *req, void *) {
 
   } else if (type == "source") {
     json_field(payload, "text", &g.pending);
+    g.pending_saved = false;
 
   } else if (type == "pickOpen") {
     for (const auto &p : ask_open_paths(g.w)) open_path_in_page(p);
@@ -739,7 +846,6 @@ static void on_page_message(const char *id, const char *req, void *) {
     if (!json_field(payload, "text", &text)) {
       std::fprintf(stderr, "glyph: refusing to save - the document could not be "
                            "read back from the page\n");
-      webview_return(g.w, id, 1, "\"unreadable document\"");
       return;
     }
     json_field(payload, "name", &name);
@@ -756,13 +862,13 @@ static void on_page_message(const char *id, const char *req, void *) {
       return;
     }
     if (!d) {
-      Doc nd;
-      nd.id = docid;
-      g.docs.push_back(nd);
-      d = &g.docs.back();
+      g.tabs.docs.push_back(Doc{docid, std::string(), std::string()});
+      d = &g.tabs.docs.back();
     }
     d->path = path;
     d->name = base_of(path);
+    // This document is now on disk; do not double-write it on close.
+    if (docid == g.tabs.active) g.pending_saved = true;
     call_page("window.__glyphSaved",
               {std::to_string(docid), js_string(d->name),
                js_string(file_url(dir_of(path), true))});
@@ -770,7 +876,7 @@ static void on_page_message(const char *id, const char *req, void *) {
   } else if (type == "openURL") {
     std::string url;
     json_field(payload, "url", &url);
-    Doc *d = find_doc(g.active);
+    Doc *d = find_doc(g.tabs.active);
     std::string doc_dir = d && !d->path.empty() ? dir_of(d->path) : std::string();
     std::string note;
     switch (action_for_url(url, doc_dir, &note)) {
@@ -785,7 +891,7 @@ static void on_page_message(const char *id, const char *req, void *) {
     // which is the safe half of the behaviour rather than a wrong guess.
     std::string target;
     json_field(payload, "target", &target);
-    Doc *d = find_doc(g.active);
+    Doc *d = find_doc(g.tabs.active);
     if (!d || d->path.empty() || target.empty()) return;
     // A target is a NAME, never a path (CLAUDE.md rule 29).
     size_t cut = target.find_last_of("/\\:");
@@ -807,7 +913,11 @@ static void on_page_message(const char *id, const char *req, void *) {
     g.selftest_stage++;
     run_selftest_stage();
   }
+}
 
+static void on_page_message(const char *id, const char *req, void *) {
+  handle_page_message(req);
+  // Always settle the promise this bound call created, on every path above.
   webview_return(g.w, id, 0, "null");
 }
 
@@ -955,19 +1065,17 @@ int main(int argc, char **argv) {
     std::string abs = absolute_path(open_path);
     name = base_of(abs);
     dir = file_url(dir_of(abs), true);
-    Doc d;
-    d.id = 1;  // the page numbers its first document 1
-    d.path = abs;
-    d.name = name;
-    g.docs.push_back(d);
-    g.active = 1;
+    g.tabs.docs.push_back(Doc{1, abs, name});  // the page numbers its first doc 1
+    g.tabs.active = 1;
   } else {
-    g.active = 1;
+    g.tabs.active = 1;
   }
 
   std::string html = compose_page(name, text, dir);
-  g.page_path = temp_dir() + SEP + "glyph-page.html";
-  if (!write_file_atomic(g.page_path, html)) {
+  // A random, unpredictable name created with O_EXCL/CREATE_NEW: a co-resident
+  // process cannot pre-plant or swap the page the webview is about to load.
+  g.page_path = temp_dir() + SEP + "glyph-" + random_token() + ".html";
+  if (!write_new_file_secure(g.page_path, html)) {
     std::fprintf(stderr, "glyph: cannot write the interface to %s\n", g.page_path.c_str());
     return 1;
   }
@@ -1002,6 +1110,14 @@ int main(int argc, char **argv) {
   // The selftest starts when the page reports "ready", not on a timer.
 
   webview_run(g.w);
+  // The window has closed. Flush the active document's last edits so closing
+  // without an explicit Save does not lose them (see flush_active). Up to one
+  // debounce (600ms) of the very last keystrokes may not have reached the shell.
+  flush_active();
+  if (!g.selftest && !g.pending_saved && !g.pending.empty()) {
+    say("glyph: the current document has unsaved changes and no file yet; "
+        "they were not saved. Use Save to choose a location next time.\n");
+  }
   webview_destroy(g.w);
   remove_file(g.page_path);
 
