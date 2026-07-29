@@ -53,10 +53,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: The JSON decoder that stands between the page and a file
+      - name: Unit tests — the JSON decoder and the tab model
         run: |
-          clang++ -std=c++17 -Ishell Scripts/json-smoke.cc -o /tmp/json-smoke
-          /tmp/json-smoke
+          clang++ -std=c++17 -Ishell Scripts/json-smoke.cc -o /tmp/json-smoke && /tmp/json-smoke
+          clang++ -std=c++17 -Ishell Scripts/docs-smoke.cc -o /tmp/docs-smoke && /tmp/docs-smoke
       - name: Build Glyph.app
         run: ./build.sh
       - name: Build the portable shell too, and run its suites
@@ -125,6 +125,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags, so the .deb version step can tell a real
+          # release tag from an ordinary commit.
+          fetch-depth: 0
       - name: Install WebKitGTK
         timeout-minutes: 8
         run: |
@@ -148,10 +152,10 @@ jobs:
           done
           echo "::error::Could not install WebKitGTK after three attempts."
           exit 1
-      - name: The JSON decoder that stands between the page and a file
+      - name: Unit tests — the JSON decoder and the tab model
         run: |
-          c++ -std=c++17 -Ishell Scripts/json-smoke.cc -o /tmp/json-smoke
-          /tmp/json-smoke
+          c++ -std=c++17 -Ishell Scripts/json-smoke.cc -o /tmp/json-smoke && /tmp/json-smoke
+          c++ -std=c++17 -Ishell Scripts/docs-smoke.cc -o /tmp/docs-smoke && /tmp/docs-smoke
       - name: Build
         run: ./shell/build-portable.sh
       - name: Run the suites inside the real app
@@ -165,13 +169,16 @@ jobs:
         run: xvfb-run --auto-servernum --server-args='-screen 0 1280x1024x24' ./shell/build/glyph --selftest
       - name: Package a .deb
         run: |
-          # A Debian version must begin with a digit. There are no tags yet, so
-          # git describe returns a bare commit sha and dpkg-deb refuses it.
-          DESCRIBED=$(git describe --tags --always 2>/dev/null | sed 's/^v//')
-          case "$DESCRIBED" in
-            [0-9]*) VERSION="$DESCRIBED" ;;
-            *)      VERSION="0.0.0+git$DESCRIBED" ;;
-          esac
+          # A Debian version must begin with a digit. Only an ACTUAL tag on HEAD
+          # is a release version; otherwise the commit sha starts with a hex
+          # letter or digit unpredictably, so pin a deterministic dev version
+          # rather than let the scheme flip on the first character of the hash.
+          # (Tags are visible because this job checks out with fetch-depth: 0.)
+          if git describe --tags --exact-match >/dev/null 2>&1; then
+            VERSION=$(git describe --tags --exact-match | sed 's/^v//')
+          else
+            VERSION="0.0.0+git$(git rev-parse --short HEAD)"
+          fi
           echo "packaging version $VERSION"
           PKG=artifacts/deb/glyph_${VERSION}_amd64
           mkdir -p "$PKG/DEBIAN" "$PKG/usr/bin" "$PKG/usr/share/applications" \
@@ -228,6 +235,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "compiling the JSON test failed" }
           ./json-smoke.exe
           if ($LASTEXITCODE -ne 0) { throw "the JSON test failed" }
+          cl /nologo /std:c++17 /EHsc /utf-8 /I shell Scripts\docs-smoke.cc /Fe:docs-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "compiling the tab-model test failed" }
+          ./docs-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw "the tab-model test failed" }
       - name: Build
         shell: pwsh
         run: ./shell/build-portable.ps1
