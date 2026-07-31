@@ -2100,12 +2100,15 @@ window.__glyphInstallChrome = function () {
     const d = active();
     if (!d) return;
     if (document.body.classList.contains("glyph-raw")) {
-      d.text = rawArea.value;
+      if (rawArea.value !== d.text) { d.text = rawArea.value; d.dirty = true; }
     } else {
       const now = window.glyphGetText();
       if (now !== d.text) { d.text = now; d.dirty = true; }
     }
     d.scrollY = window.scrollY;
+    // Switching away from a note flushes its edit now, so nothing is left
+    // waiting on a tab that may be evicted before its timer fires.
+    if (serverHost() && d.serverPath && d.dirty) scheduleServerSave(d, { immediate: true });
   }
 
   // A native host is present when the portable shell has bound its one
@@ -2210,8 +2213,11 @@ window.__glyphInstallChrome = function () {
     const d = active();
     if (!d) return;
     if (serverHost()) {
-      // Autosave already keeps the file current; this forces it now.
-      if (d.serverPath) { scheduleServerSave(d, true); }
+      // Autosave already keeps the file current; this flushes it now. It forces
+      // past the stale-write check ONLY when a conflict is already showing — so
+      // a reflexive Save cannot silently overwrite a version edited on the
+      // computer, but a deliberate second Save after the warning does.
+      if (d.serverPath) scheduleServerSave(d, { immediate: true, force: d.conflict === true });
       return;
     }
     if (nativeHost()) {
@@ -2376,22 +2382,35 @@ window.__glyphInstallChrome = function () {
   // land while a write is running. A 409 means the file changed on the computer
   // since it was opened here; rather than clobber that, it warns and stops until
   // the user reloads or forces a save.
-  let serverSaveTimer = null;
-  let serverSaving = false;
-  function scheduleServerSave(d, force) {
+  // The save state is PER DOCUMENT (d.saveTimer / d.saving), not one shared
+  // timer: with two notes open, a shared timer let one note's edit cancel the
+  // other's pending save and orphan it forever. `force` (an acknowledged
+  // overwrite after a conflict) is remembered on the doc so it survives an
+  // in-flight save; `immediate` skips the debounce for an explicit Save.
+  function scheduleServerSave(d, opts) {
+    opts = opts || {};
     if (!d || !d.serverPath) return;
     d.pendingSave = true;
-    if (force) { if (serverSaveTimer) { clearTimeout(serverSaveTimer); serverSaveTimer = null; } flushServerSave(d, true); return; }
-    if (serverSaveTimer) clearTimeout(serverSaveTimer);
-    serverSaveTimer = setTimeout(() => { serverSaveTimer = null; flushServerSave(d, false); }, 800);
+    if (opts.force) d.forceNext = true;
+    if (d.saveTimer) clearTimeout(d.saveTimer);
+    d.saveTimer = setTimeout(() => { d.saveTimer = null; flushServerSave(d); }, opts.immediate ? 0 : 800);
   }
-  async function flushServerSave(d, force) {
-    if (serverSaving) return;              // a later edit re-triggers in finally
-    if (!d.pendingSave) return;
-    serverSaving = true;
+  function scheduleServerRetry(d) {
+    // A failed save (offline) is retried unconditionally — the point is that the
+    // text never persisted, so it must resend even if nothing new was typed.
+    if (!d || d.retryTimer) return;
+    d.retryTimer = setTimeout(() => { d.retryTimer = null; if (d.pendingSave) flushServerSave(d); }, 4000);
+  }
+  async function flushServerSave(d) {
+    if (!d || !d.serverPath || !d.pendingSave || d.saving) return;
+    d.saving = true;
     const sent = d.text;
+    const force = !!d.forceNext;
     try {
       const body = { path: d.serverPath, text: sent };
+      // A normal save (and the FIRST explicit Save) sends baseMtime so the server
+      // refuses to clobber a version edited on the computer meanwhile. Only a
+      // save the user repeats AFTER seeing the conflict warning forces past it.
       if (!force && typeof d.mtime === "number") body.baseMtime = d.mtime;
       const res = await glyphApi("/api/file", {
         method: "PUT",
@@ -2399,21 +2418,24 @@ window.__glyphInstallChrome = function () {
         body: JSON.stringify(body),
       });
       if (res.status === 409) {
-        d.conflict = true;
-        paintStatus("Changed on the computer — press Save to overwrite, or reopen to load it");
+        d.conflict = true;                 // pendingSave stays set; next Save forces
+        paintStatus("Changed on the computer — Save again to overwrite, or reopen to load it");
         return;
       }
-      if (!res.ok) { paintStatus("Save failed"); return; }
+      if (!res.ok) { paintStatus("Save failed — will retry"); scheduleServerRetry(d); return; }
       const info = await res.json();
       d.mtime = info.mtime;
       d.conflict = false;
+      d.forceNext = false;
       if (d.text === sent) { d.pendingSave = false; d.dirty = false; paintTabs(); }
       paintStatus("Saved");
     } catch (e) {
       paintStatus("Offline — will save when reconnected");
+      scheduleServerRetry(d);
     } finally {
-      serverSaving = false;
-      if (d.pendingSave && d.text !== sent) scheduleServerSave(d, false);
+      d.saving = false;
+      // Edits that landed mid-save, or a still-pending forced overwrite.
+      if (d.pendingSave && (d.text !== sent || d.forceNext)) scheduleServerSave(d, { force: d.forceNext });
     }
   }
 
@@ -2421,6 +2443,10 @@ window.__glyphInstallChrome = function () {
     // Land on the file list so the phone opens to "what can I read?".
     loadServerList();
     openDrawer();
+    // When the wifi comes back, flush every note that still has an edit waiting.
+    window.addEventListener("online", () => {
+      docs.forEach((d) => { if (d.serverPath && d.pendingSave) scheduleServerSave(d, { immediate: true }); });
+    });
   }
 
   /* ---------- images ---------- */

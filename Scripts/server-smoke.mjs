@@ -9,7 +9,7 @@
 // suite that stands between a phone on the wifi and the rest of the disk, so
 // every "blocked" case here is a file that must stay untouched.
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,6 +108,43 @@ async function main() {
   }
   const secret = await readFile(path.join(root, "secret.md"), "utf8");
   ok("the file outside the root is untouched", secret === "SECRET OUTSIDE THE ROOT\n");
+
+  // A symlink planted at the atomic-write TEMP path must not be followed out of
+  // the folder when the note is written. This is the escape the review found:
+  // <note>.glyph-tmp -> an outside file, and editing the note wrote through it.
+  const tempTarget = path.join(root, "temp-target.md");
+  await writeFile(tempTarget, "UNTOUCHED BY TEMP WRITE\n");
+  await symlink(tempTarget, path.join(drafts, "a.md.glyph-tmp")).catch(() => {});
+  r = await fetch(`${base}/api/file`, {
+    method: "PUT", headers: auth({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path: "a.md", text: "# A written past the temp symlink\n" }),
+  });
+  ok("writing a note past a planted temp symlink succeeds", r.status === 200);
+  ok("the temp-symlink target outside root is untouched",
+     (await readFile(tempTarget, "utf8")) === "UNTOUCHED BY TEMP WRITE\n");
+  ok("the note itself got the new content",
+     (await readFile(path.join(drafts, "a.md"), "utf8")).includes("past the temp symlink"));
+
+  // A NEW .md created inside a symlinked-out subdirectory must be blocked (the
+  // new-file branch that skips the existing-file realpath check).
+  const outDir = path.join(root, "outdir");
+  await mkdir(outDir, { recursive: true });
+  await symlink(outDir, path.join(drafts, "linkdir")).catch(() => {});
+  r = await fetch(`${base}/api/file`, {
+    method: "PUT", headers: auth({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path: "linkdir/new.md", text: "ESCAPED VIA SYMLINK DIR" }),
+  });
+  ok("a new file inside a symlinked-out subdir is blocked", r.status === 400);
+  let leaked = false;
+  try { await stat(path.join(outDir, "new.md")); leaked = true; } catch { /* good */ }
+  ok("nothing leaked into the symlinked-out directory", !leaked);
+
+  // A token whose bytes differ from its code-unit count must 401, not 500. An
+  // HTTP header value is Latin-1, so a byte >= 0x80 (here U+00FF) is one code
+  // unit but two UTF-8 bytes — the old string-length pre-check passed it through
+  // to timingSafeEqual, which throws on unequal buffers and crashed to a 500.
+  r = await fetch(`${base}/api/files`, { headers: { Authorization: "Bearer " + "ÿ".repeat(token.length) } });
+  ok("a high-byte wrong token is a clean 401, not a 500", r.status === 401);
 
   // Stale write (changed on disk since load) is refused rather than clobbering.
   r = await fetch(`${base}/api/file?path=reports/b.md`, { headers: auth() });

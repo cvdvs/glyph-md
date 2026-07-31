@@ -25,7 +25,7 @@
 //     access away from home use a private tunnel (Tailscale), which is
 //     encrypted and stays off the public net.
 import { createServer } from "node:http";
-import { readFile, writeFile, readdir, stat, rename, mkdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, stat, rename, mkdir, unlink } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { networkInterfaces, homedir, hostname } from "node:os";
@@ -73,12 +73,16 @@ async function loadOrCreateToken() {
 }
 const TOKEN = await loadOrCreateToken();
 
+const TOKEN_BYTES = Buffer.from(TOKEN, "utf8");
 function tokenOk(req) {
   const header = req.headers["authorization"] || "";
   const got = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (got.length !== TOKEN.length) return false;
-  // Constant-time compare so a wrong token cannot be guessed byte by byte.
-  return timingSafeEqual(Buffer.from(got), Buffer.from(TOKEN));
+  const g = Buffer.from(got, "utf8");
+  // Compare BYTE length, not string length: timingSafeEqual throws on unequal
+  // buffers, so a same-code-unit-length multibyte token would have crashed the
+  // request into a 500 instead of a clean 401.
+  if (g.length !== TOKEN_BYTES.length) return false;
+  return timingSafeEqual(g, TOKEN_BYTES);
 }
 
 // ------------------------------------------------------------ path sandbox
@@ -136,9 +140,21 @@ async function listFiles() {
 
 // ------------------------------------------------------------- atomic write
 async function writeAtomic(abs, text) {
-  const tmp = abs + ".glyph-tmp";
-  await writeFile(tmp, text, { encoding: "utf8", mode: 0o644 });
-  await rename(tmp, abs);
+  // A RANDOM temp name created with O_EXCL ("wx"). If the served folder holds
+  // untrusted content (cloned repos, downloads, shared vaults — the project's
+  // standing threat model, and git preserves symlinks), an attacker can plant a
+  // symlink at the OLD predictable temp path "<note>.glyph-tmp" pointing at, say,
+  // ~/.zshrc; the plain write followed it and overwrote the outside file on the
+  // next edit. O_EXCL refuses to open ANY existing entry, symlink included, and
+  // the random suffix also stops two concurrent writers sharing a temp file.
+  const tmp = abs + "." + randomBytes(6).toString("hex") + ".glyph-tmp";
+  try {
+    await writeFile(tmp, text, { encoding: "utf8", mode: 0o644, flag: "wx" });
+    await rename(tmp, abs);
+  } catch (e) {
+    await unlink(tmp).catch(() => {});
+    throw e;
+  }
 }
 
 // --------------------------------------------------------- the served page
@@ -249,6 +265,18 @@ const server = createServer(async (req, res) => {
         if (!abs || !isMarkdown(abs) || typeof body.text !== "string") {
           return json(res, 400, { error: "bad path" });
         }
+        // The PARENT folder must resolve inside the root, for a NEW file too —
+        // otherwise a new .md created inside a symlinked subdirectory would land
+        // outside. resolveInRoot is lexical; this follows the real links.
+        let parentReal;
+        try {
+          parentReal = realpathSync(path.dirname(abs));
+        } catch {
+          return json(res, 400, { error: "bad path" });
+        }
+        if (parentReal !== ROOT && !parentReal.startsWith(ROOT + path.sep)) {
+          return json(res, 400, { error: "bad path" });
+        }
         // If the file changed on disk since the phone loaded it (edited on the
         // Mac at the same time), refuse rather than clobber the newer version.
         // The one true "conflict" case even with a single source of truth.
@@ -257,12 +285,12 @@ const server = createServer(async (req, res) => {
           if (typeof body.baseMtime === "number" && Math.floor(s.mtimeMs) > body.baseMtime + 1) {
             return json(res, 409, { error: "changed on disk", mtime: Math.floor(s.mtimeMs) });
           }
-          // Do not follow a symlink that points out of the root.
+          // An existing file must not itself be a symlink pointing out of root.
           const real = realpathSync(abs);
           if (real !== ROOT && !real.startsWith(ROOT + path.sep)) {
             return json(res, 400, { error: "bad path" });
           }
-        } catch { /* new file: fine, the parent is already inside the root */ }
+        } catch { /* new file: the parent was checked above */ }
         await writeAtomic(abs, body.text);
         const s2 = await stat(abs);
         return json(res, 200, { path: body.path, mtime: Math.floor(s2.mtimeMs) });
