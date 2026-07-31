@@ -102,6 +102,30 @@ Firefox lack that browser API, so saving downloads the file instead. Pictures ar
 embedded in the document rather than copied next to it, since a web page cannot
 write files beside your note.
 
+### On your phone (read and edit a folder from anywhere in the house)
+
+Run a small server on the machine that holds your notes — a Mac mini, a laptop
+that stays on — pointed at a folder of `.md` files:
+
+```bash
+node server/glyph-server.mjs ~/Documents/drafts
+```
+
+It prints a link with a one-time token. Open that link **once** on your phone
+(same wifi) and it pairs. You get the full Glyph editor plus a list of every
+`.md` file in that folder. Open a draft, read it, edit it — every change saves
+straight back to the file on the computer. There is only **one copy** of each
+file, so it is genuinely live and there is nothing to sync and no conflict to
+untangle; close the phone and the edit is already on disk.
+
+Node standard library only — nothing to `npm install`. It keeps working offline
+on your own network. **Security:** every request needs the token, and a request
+can never read or write outside the served folder. Keep it on your home wifi and
+do **not** port-forward it to the internet; for access away from home, put both
+devices on [Tailscale](https://tailscale.com) (free, encrypted, private) and use
+the Tailscale address. See [docs/mobile.md](docs/mobile.md) for the always-on
+setup and Tailscale steps.
+
 ## Shortcuts
 
 | Keys | Does |

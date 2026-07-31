@@ -37,6 +37,8 @@ jobs:
         run: node Scripts/engine-smoke.mjs --security
       - name: Fidelity — a document must survive being written back
         run: node Scripts/engine-smoke.mjs --fidelity
+      - name: Server — the phone cannot reach past the served folder
+        run: node Scripts/server-smoke.mjs
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

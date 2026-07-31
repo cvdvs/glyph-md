@@ -632,6 +632,63 @@
     font: 600 15px -apple-system, system-ui, sans-serif;
   }
   body.glyph-dropping #glyph-drop { display: flex; }
+
+  /* ---- server mode: the file drawer ---- */
+  #glyph-drawer {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 60;
+    width: 300px; max-width: 82vw;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    transform: translateX(-102%);
+    transition: transform 0.2s ease;
+    display: flex; flex-direction: column;
+    overscroll-behavior: contain;
+  }
+  body.glyph-drawer-open #glyph-drawer { transform: none; }
+  #glyph-drawer-backdrop {
+    position: fixed; inset: 0; z-index: 55;
+    background: rgba(0, 0, 0, 0.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  body.glyph-drawer-open #glyph-drawer-backdrop { opacity: 1; pointer-events: auto; }
+  .glyph-drawer-head {
+    padding: max(14px, env(safe-area-inset-top)) 16px 8px;
+    font: 600 13px -apple-system, system-ui, sans-serif;
+    color: var(--fg);
+  }
+  .glyph-drawer-search {
+    margin: 0 12px 8px; padding: 9px 11px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: rgba(var(--fg-rgb), 0.03); color: var(--fg);
+    font-size: 15px; -webkit-appearance: none; outline: none;
+  }
+  .glyph-drawer-search:focus { border-color: var(--accent); }
+  .glyph-drawer-list {
+    list-style: none; margin: 0; padding: 0 8px 24px;
+    overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch;
+  }
+  .glyph-drawer-item {
+    display: flex; flex-direction: column; gap: 2px; width: 100%;
+    text-align: left; border: none; background: transparent; cursor: pointer;
+    padding: 11px 10px; border-radius: 8px; color: var(--fg);
+  }
+  .glyph-drawer-item:hover { background: rgba(var(--fg-rgb), 0.06); }
+  .glyph-drawer-item.current { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
+  .glyph-drawer-name { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .glyph-drawer-sub { font-size: 11px; color: var(--faint); }
+  .glyph-drawer-empty { padding: 12px 14px; color: var(--muted); font-size: 13px; }
+
+  /* ---- touch / small screen (chrome only, so macOS is untouched) ---- */
+  @media (max-width: 640px) {
+    body.glyph-chrome #content { padding-left: 16px; padding-right: 16px; }
+    body.glyph-chrome #md { font-size: 17px; line-height: 1.65; }
+    body.glyph-chrome .glyph-btn { min-width: 38px; height: 38px; }
+    body.glyph-chrome #glyph-tools { height: 54px; }
+    body.glyph-chrome .glyph-tab { font-size: 13.5px; padding: 0 12px 0 14px; }
+    body.glyph-chrome #glyph-drawer { width: 86vw; max-width: 86vw; }
+    body.glyph-chrome #glyph-status { bottom: max(10px, env(safe-area-inset-bottom)); }
+  }
 </style>
 </head>
 <body>
@@ -2033,6 +2090,8 @@ window.__glyphInstallChrome = function () {
       d.text = msg.text;
       d.dirty = true;
       paintTabs();
+      // In server mode a changed document autosaves to its file on the server.
+      if (serverHost() && d.serverPath) scheduleServerSave(d);
     }
     paintStatus();
   };
@@ -2054,6 +2113,31 @@ window.__glyphInstallChrome = function () {
   // the browser's, which matters because showOpenFilePicker does not exist in
   // WebKitGTK at all and is unavailable on the file:// page the shell loads.
   const nativeHost = () => typeof window.__glyphNative === "function";
+
+  // The Glyph server (server/glyph-server.mjs) serves this page and a folder of
+  // .md files. In that mode, open reads a file over its API, and every edit
+  // autosaves back to it — there is one copy of the file, on the server, so the
+  // phone is a live window into it rather than a second copy to reconcile.
+  const serverHost = () => !!window.__glyphServer;
+  if (serverHost()) {
+    // The token arrives once in the URL fragment (never sent to the server), is
+    // stored, and is stripped from the address bar. After that the phone is
+    // paired until localStorage is cleared.
+    const m = (location.hash || "").match(/token=([a-f0-9]+)/);
+    if (m) {
+      try { localStorage.setItem("glyphToken", m[1]); } catch (e) { /* private mode */ }
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+  }
+  function glyphToken() {
+    try { return localStorage.getItem("glyphToken") || ""; } catch (e) { return ""; }
+  }
+  function glyphApi(path, opts) {
+    opts = opts || {};
+    return fetch(path, Object.assign({}, opts, {
+      headers: Object.assign({ Authorization: "Bearer " + glyphToken() }, opts.headers || {}),
+    }));
+  }
 
   function openDoc(name, text, handle, dir) {
     const d = { id: nextId++, name: name || "Untitled.md", text: text || "",
@@ -2106,6 +2190,7 @@ window.__glyphInstallChrome = function () {
   const MD_TYPES = [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown", ".mdown", ".mkd"] } }];
 
   async function doOpen() {
+    if (serverHost()) { toggleDrawer(); return; }
     if (nativeHost()) { postToApp({ type: "pickOpen" }); return; }
     if (canPick) {
       try {
@@ -2124,6 +2209,11 @@ window.__glyphInstallChrome = function () {
     captureActive();
     const d = active();
     if (!d) return;
+    if (serverHost()) {
+      // Autosave already keeps the file current; this forces it now.
+      if (d.serverPath) { scheduleServerSave(d, true); }
+      return;
+    }
     if (nativeHost()) {
       // The shell owns the path. It writes the file, or asks for one if this
       // document has never been saved, and reports back through __glyphSaved.
@@ -2166,6 +2256,171 @@ window.__glyphInstallChrome = function () {
       if (!/\.(md|markdown|mdown|mkd|txt)$/i.test(f.name)) continue;
       openDoc(f.name, await f.text(), null);
     }
+  }
+
+  /* ---------- server mode ---------- */
+  // The file browser drawer and the read/autosave loop against the Glyph server.
+  // All of this is inert unless serverHost() — the native app and the plain
+  // standalone page never build it.
+  const drawer = document.createElement("aside");
+  drawer.id = "glyph-drawer";
+  const backdrop = document.createElement("div");
+  backdrop.id = "glyph-drawer-backdrop";
+  backdrop.addEventListener("click", () => closeDrawer());
+  if (serverHost()) {
+    document.body.appendChild(backdrop);
+    document.body.appendChild(drawer);
+  }
+
+  function openDrawer() { document.body.classList.add("glyph-drawer-open"); }
+  function closeDrawer() { document.body.classList.remove("glyph-drawer-open"); }
+  function toggleDrawer() {
+    if (document.body.classList.contains("glyph-drawer-open")) closeDrawer();
+    else { openDrawer(); loadServerList(); }
+  }
+
+  let serverFiles = [];
+  async function loadServerList() {
+    drawer.innerHTML = '<div class="glyph-drawer-head">Loading…</div>';
+    try {
+      const res = await glyphApi("/api/files");
+      if (res.status === 401) { drawer.innerHTML = drawerError("Not paired. Reopen the link from the server."); return; }
+      if (!res.ok) { drawer.innerHTML = drawerError("Could not reach the server."); return; }
+      const data = await res.json();
+      serverFiles = data.files || [];
+      renderDrawer(data.root || "Files");
+    } catch (e) {
+      drawer.innerHTML = drawerError("Offline — the computer is not reachable.");
+    }
+  }
+
+  function drawerError(msg) {
+    const d = document.createElement("div");
+    d.className = "glyph-drawer-head";
+    d.textContent = msg;
+    return d.outerHTML;
+  }
+
+  function renderDrawer(rootName, filter) {
+    drawer.textContent = "";
+    const head = document.createElement("div");
+    head.className = "glyph-drawer-head";
+    head.textContent = rootName;
+    drawer.appendChild(head);
+
+    const search = document.createElement("input");
+    search.className = "glyph-drawer-search";
+    search.type = "search";
+    search.placeholder = "Filter…";
+    search.value = filter || "";
+    search.addEventListener("input", () => renderList(search.value.toLowerCase()));
+    drawer.appendChild(search);
+
+    const list = document.createElement("ul");
+    list.className = "glyph-drawer-list";
+    drawer.appendChild(list);
+
+    function renderList(q) {
+      list.textContent = "";
+      const shown = serverFiles.filter((f) => !q || f.path.toLowerCase().indexOf(q) >= 0);
+      if (!shown.length) {
+        const li = document.createElement("li");
+        li.className = "glyph-drawer-empty";
+        li.textContent = serverFiles.length ? "No match." : "No markdown files in this folder.";
+        list.appendChild(li);
+        return;
+      }
+      for (const f of shown) {
+        const li = document.createElement("li");
+        const a = document.createElement("button");
+        a.className = "glyph-drawer-item";
+        if (active() && active().serverPath === f.path) a.classList.add("current");
+        const nm = document.createElement("span");
+        nm.className = "glyph-drawer-name";
+        nm.textContent = f.name.replace(/\.(md|markdown|mdown|mkd)$/i, "");
+        const sub = document.createElement("span");
+        sub.className = "glyph-drawer-sub";
+        const folder = f.path.indexOf("/") >= 0 ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
+        sub.textContent = folder;
+        a.appendChild(nm);
+        if (folder) a.appendChild(sub);
+        a.addEventListener("click", () => openFromServer(f.path));
+        li.appendChild(a);
+        list.appendChild(li);
+      }
+    }
+    renderList((filter || "").toLowerCase());
+  }
+
+  async function openFromServer(rel) {
+    // Already open? Just show it.
+    const existing = docs.find((d) => d.serverPath === rel);
+    if (existing) { activate(existing.id); closeDrawer(); return; }
+    try {
+      const res = await glyphApi("/api/file?path=" + encodeURIComponent(rel));
+      if (!res.ok) { flash("Could not open that file"); return; }
+      const data = await res.json();
+      const name = rel.indexOf("/") >= 0 ? rel.slice(rel.lastIndexOf("/") + 1) : rel;
+      const d = openDoc(name, data.text, null);
+      d.serverPath = rel;
+      d.mtime = data.mtime;
+      d.dirty = false;
+      paintTabs();
+      closeDrawer();
+    } catch (e) {
+      flash("Offline — the computer is not reachable");
+    }
+  }
+
+  // Autosave to the server: one write in flight at a time, coalescing edits that
+  // land while a write is running. A 409 means the file changed on the computer
+  // since it was opened here; rather than clobber that, it warns and stops until
+  // the user reloads or forces a save.
+  let serverSaveTimer = null;
+  let serverSaving = false;
+  function scheduleServerSave(d, force) {
+    if (!d || !d.serverPath) return;
+    d.pendingSave = true;
+    if (force) { if (serverSaveTimer) { clearTimeout(serverSaveTimer); serverSaveTimer = null; } flushServerSave(d, true); return; }
+    if (serverSaveTimer) clearTimeout(serverSaveTimer);
+    serverSaveTimer = setTimeout(() => { serverSaveTimer = null; flushServerSave(d, false); }, 800);
+  }
+  async function flushServerSave(d, force) {
+    if (serverSaving) return;              // a later edit re-triggers in finally
+    if (!d.pendingSave) return;
+    serverSaving = true;
+    const sent = d.text;
+    try {
+      const body = { path: d.serverPath, text: sent };
+      if (!force && typeof d.mtime === "number") body.baseMtime = d.mtime;
+      const res = await glyphApi("/api/file", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 409) {
+        d.conflict = true;
+        paintStatus("Changed on the computer — press Save to overwrite, or reopen to load it");
+        return;
+      }
+      if (!res.ok) { paintStatus("Save failed"); return; }
+      const info = await res.json();
+      d.mtime = info.mtime;
+      d.conflict = false;
+      if (d.text === sent) { d.pendingSave = false; d.dirty = false; paintTabs(); }
+      paintStatus("Saved");
+    } catch (e) {
+      paintStatus("Offline — will save when reconnected");
+    } finally {
+      serverSaving = false;
+      if (d.pendingSave && d.text !== sent) scheduleServerSave(d, false);
+    }
+  }
+
+  function initServer() {
+    // Land on the file list so the phone opens to "what can I read?".
+    loadServerList();
+    openDrawer();
   }
 
   /* ---------- images ---------- */
@@ -2414,6 +2669,14 @@ window.__glyphInstallChrome = function () {
 
   // The page starts holding whatever document was embedded in it.
   window.__glyphChromeReady = function (name, text, dir) {
+    if (serverHost()) {
+      // Land on the file list rather than a blank untitled tab; a document
+      // opens when one is picked from the drawer.
+      initServer();
+      paintTabs();
+      paintStatus();
+      return;
+    }
     openDoc(name || "Untitled.md", text || "", null, dir || null);
     paintTabs();
     paintStatus();
