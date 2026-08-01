@@ -28,10 +28,21 @@ It prints something like:
   Or by name:  http://mac-mini.local:4321/#token=…
 ```
 
-Open that link **once** on your phone. It stores the token and drops it from the
-address bar; after that the phone is paired until you clear the browser's
-storage. You land on the list of `.md` files in the folder — tap one to read or
-edit it.
+Open that link **once** on your phone. It stores the token and stays paired. You
+land on a folder tree of the notes in that folder — tap one to read or edit it.
+
+Keep the **whole** link (the part after `#` included) when you bookmark it or add
+it to your home screen. The token is remembered per address, and a home-screen
+app gets its own storage separate from the browser's, so the full link is what
+lets the shortcut re-pair itself — including after a phone clears storage for a
+site it has not seen in a week.
+
+### Add it to your home screen
+
+On iOS, Share → **Add to Home Screen**. It opens full-screen with its own icon,
+with no browser chrome — the page ships the `apple-touch-icon` and web-app tags,
+sizes its touch targets to 44pt, and pads the toolbar for the notch so nothing
+hides under the status bar.
 
 Node standard library only, nothing to install. `--port=NNNN` changes the port.
 
@@ -75,21 +86,61 @@ pair the Tailscale one — open each link once.
 
 ## Keep it running
 
-The server runs as long as its Terminal window is open. Double-click
-**`Scripts/Start Glyph Server.command`** (drag it to the Dock and it is one
-click). Closing that window stops the server; that is the off switch.
+Two ways, depending on whether you want to think about it.
 
-**Why not a background job that starts itself?** Because macOS will not allow it.
-A LaunchAgent is denied `~/Documents`, `~/Desktop` and `~/Downloads` outright —
-measured on macOS 26.5.2, an agent could not even list the folder — and it cannot
-prompt for permission the way an app can. With both the notes and Glyph itself
-under `~/Documents`, launchd exits 127 (`can't open input file`) and then retries
-forever, which from the phone looks exactly like the server having vanished.
-`Scripts/glyph-server-agent.sh` therefore refuses to install in that situation
-and says so, rather than leaving a job that silently never works.
+**One click, no setup.** Double-click `Scripts/Start Glyph Server.command` (drag
+it to the Dock). The server runs as long as that Terminal window is open, and
+closing the window is the off switch. Nothing to configure — Terminal already
+holds the permission described below, so the server inherits it.
 
-The Terminal window inherits Terminal's own permission, which is why the
-double-click approach works with no setup at all.
+**Always on.** One command plus one permission, and it starts at login and
+restarts itself if it ever stops:
+
+```bash
+Scripts/install-always-on.sh ~/Documents/drafts
+```
+
+That builds a small `Glyph Server.app` in `/Applications` and installs a
+LaunchAgent. Then grant it Full Disk Access — **System Settings → Privacy &
+Security → Full Disk Access → +** → pick **Glyph Server** — and run:
+
+```bash
+Scripts/install-always-on.sh --start
+```
+
+It verifies rather than assumes: it reports "Running", or prints the log and
+names what is missing. `--status` and `--uninstall` do what they say.
+
+### Why it needs that permission, and why the app is a compiled binary
+
+macOS protects `~/Documents`, `~/Desktop` and `~/Downloads` behind user consent.
+An app can ask with a dialog; a background job has no window, so it cannot ask
+and macOS silently answers no. Measured on macOS 26.5.2: a LaunchAgent could not
+list `~/Documents` at all, while `~/Music` and `/tmp` were fine. If both your
+notes and Glyph live under `~/Documents`, the job fails with `can't open input
+file` and retries forever — which from the phone looks exactly like the server
+having vanished.
+
+The fix is the app bundle, and one detail matters: **its executable is a compiled
+program, not a shell script.** A Full Disk Access grant attaches to a signed
+program. macOS runs a script by exec'ing `/bin/zsh` with the script as input, so
+the process it sees is `/bin/zsh` — which has no grant and should not be given
+one. With a script there, the grant had no effect whatsoever; with
+`shell/glyph-server-stub.c` compiled in its place, the same grant worked
+immediately.
+
+The stub is deliberately frozen and about twenty lines: it does nothing but hand
+off to `Scripts/glyph-server-launcher.sh`, which lives in the repo and can change
+freely. Because the grant follows the stub's signature, keeping it unchanged
+means Glyph can be updated without ever re-granting the permission.
+
+The launcher resolves `node` at run time (following nvm's `default` alias, then
+the newest install, then Homebrew and `/usr/local`) rather than baking a path
+into the LaunchAgent, since an nvm path carries the version number and would
+break at the next upgrade.
+
+If you would rather not grant anything, the double-click route above needs no
+permission at all.
 
 ## Is "not secure" a problem?
 

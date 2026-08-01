@@ -1,8 +1,10 @@
 # Glyph
 
-A tiny native Mac app for reading and editing markdown — Obsidian's live preview, without the vault.
+A small app for reading and editing markdown — Obsidian's live preview, without the vault. Native on **macOS, Windows and Linux**, and it can serve a folder of notes to your **phone**.
 
 LLM workflows produce piles of `.md` files. Obsidian wants them moved into a vault before it treats them well; TextEdit shows you raw asterisks. Glyph is the missing middle: double-click any markdown file anywhere on disk and it opens instantly as a formatted, editable page.
+
+One interface everywhere. `Resources/viewer.html` *is* the app — the renderer, the live editor and the serializer — and each platform is a thin native shell around it. That is also why it runs in a browser as a single self-contained file, and on a phone with no app to install.
 
 <p>
   <img src="docs/screenshot-dark.png" width="49%" alt="Glyph in dark mode">
@@ -117,20 +119,29 @@ that stays on — pointed at a folder of `.md` files:
 node server/glyph-server.mjs ~/Documents/drafts
 ```
 
-It prints a link with a one-time token. Open that link **once** on your phone
-(same wifi) and it pairs. You get the full Glyph editor plus a list of every
-`.md` file in that folder. Open a draft, read it, edit it — every change saves
+It prints a link carrying a token. Open it **once** on your phone (same wifi) and
+it pairs. You get the full Glyph editor plus a **folder tree** of the notes it
+serves — collapsible, filterable, remembering what you left open. Open a draft, read it, edit it — every change saves
 straight back to the file on the computer. There is only **one copy** of each
 file, so it is genuinely live and there is nothing to sync and no conflict to
 untangle; close the phone and the edit is already on disk.
 
-Node standard library only — nothing to `npm install`. It keeps working offline
-on your own network. **Security:** every request needs the token, and a request
-can never read or write outside the served folder. Keep it on your home wifi and
-do **not** port-forward it to the internet; for access away from home, put both
-devices on [Tailscale](https://tailscale.com) (free, encrypted, private) and use
-the Tailscale address. See [docs/mobile.md](docs/mobile.md) for the always-on
-setup and Tailscale steps.
+**Add it to your home screen** (iOS: Share → Add to Home Screen) and it opens
+full-screen with its own icon and no browser chrome: touch targets sized to 44pt,
+the toolbar padded for the notch, and a text-size control for reading in bed.
+
+Node standard library only — nothing to `npm install`. **Security:** every
+request needs the token, a request can never read or write outside the served
+folder, an unsaved edit is kept on the phone and retried if the connection drops,
+and a file changed on the computer meanwhile is never silently overwritten. Keep
+it on your home network and do **not** port-forward it; for access from anywhere,
+put both devices on [Tailscale](https://tailscale.com) (free, encrypted, private
+— only your own devices) and use the Tailscale address, which the server prints
+for you.
+
+It can also start at login and restart itself, so there is no window to keep
+open. See [docs/mobile.md](docs/mobile.md) for that, for Tailscale, and for why
+the always-on route needs one macOS permission.
 
 ## Plain text files
 
@@ -182,9 +193,12 @@ Rebuild and reinstall with `./build.sh` + copy to `/Applications` (quit Glyph fi
 
 ## Honest limits
 
-- Editing in the formatted view lightly normalizes a file's markdown on first edit (bullet markers, spacing) — content is preserved, formatting is tidied.
+- Editing in the formatted view lightly normalizes a file's markdown on first edit (bullet markers, spacing) — content is preserved, formatting is tidied. Plain text files are exempt: they come back byte for byte.
 - Link URLs and frontmatter are edited in raw mode (⌘E).
 - The app is unsigned — you build it yourself, so Gatekeeper has nothing to complain about.
+- The phone server is a live window onto the computer, not a sync: it needs to reach that machine, so there is no offline editing away from it.
+- The macOS build of the portable shell exists so the Windows/Linux interface can be checked on a Mac. It has no native file dialogs — pass a file on the command line. The real Mac app is the AppKit one.
+- Documents past 300KB open as plain text rather than a formatted page, because rendering them live is slower than it is useful.
 
 ## License
 
