@@ -61,47 +61,58 @@ both devices on [Tailscale](https://tailscale.com) — free, encrypted, and
 private (only your own devices can connect).
 
 1. Install Tailscale on the server machine and on the phone; sign in to the same
-   account on both.
-2. On the server, find its Tailscale address (`tailscale ip -4`, e.g.
-   `100.x.y.z`), or use its Tailscale name.
-3. On the phone, open `http://100.x.y.z:4321/#token=…` once.
+   account on both. (Different accounts create two separate tailnets: both
+   devices say "Connected" and simply cannot see each other.)
+2. Start the server — it prints the Tailscale link in its banner automatically.
+3. On the phone, open that link once.
 
-That is all — the server itself does not change. It still only listens on your
-own machine; Tailscale carries the connection privately between your devices.
+That is all; the server itself does not change, because it already listens on
+every interface. Tailscale carries the connection privately between your own
+devices, and nothing is exposed to the internet.
 
-## Keep it always on (macOS launchd)
+The phone stores the token **per address**, so pairing on the wifi link does not
+pair the Tailscale one — open each link once.
 
-So the server starts with the machine and restarts if it ever stops, create
-`~/Library/LaunchAgents/com.glyph.server.plist` (adjust the two paths):
+## Keep it running
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.glyph.server</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/local/bin/node</string>
-    <string>/Users/YOU/Documents/Projects/App - Glyph/server/glyph-server.mjs</string>
-    <string>/Users/YOU/Documents/drafts</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/Users/YOU/Library/Logs/glyph-server.log</string>
-  <key>StandardErrorPath</key><string>/Users/YOU/Library/Logs/glyph-server.log</string>
-</dict>
-</plist>
-```
+The server runs as long as its Terminal window is open. Double-click
+**`Scripts/Start Glyph Server.command`** (drag it to the Dock and it is one
+click). Closing that window stops the server; that is the off switch.
 
-Find your `node` path with `which node` and put it in place of
-`/usr/local/bin/node`. Then:
+**Why not a background job that starts itself?** Because macOS will not allow it.
+A LaunchAgent is denied `~/Documents`, `~/Desktop` and `~/Downloads` outright —
+measured on macOS 26.5.2, an agent could not even list the folder — and it cannot
+prompt for permission the way an app can. With both the notes and Glyph itself
+under `~/Documents`, launchd exits 127 (`can't open input file`) and then retries
+forever, which from the phone looks exactly like the server having vanished.
+`Scripts/glyph-server-agent.sh` therefore refuses to install in that situation
+and says so, rather than leaving a job that silently never works.
 
-```bash
-launchctl load ~/Library/LaunchAgents/com.glyph.server.plist
-```
+The Terminal window inherits Terminal's own permission, which is why the
+double-click approach works with no setup at all.
 
-The token is never written to a log — logs end up world-readable more often
-than anyone expects. Read it from `~/.config/glyph/server-token`, which is
-readable only by you. To stop it: `launchctl unload …` the same file.
+## Is "not secure" a problem?
+
+On the **Tailscale link**, no. Tailscale encrypts everything between your own
+devices (WireGuard), so the traffic is protected even though the URL says
+`http://`. The browser shows the warning because it only inspects the URL scheme
+and cannot see the tunnel underneath.
+
+On the **home-wifi link** (`192.168.…`, `mac-mini.local`) the warning is
+accurate — that traffic is not encrypted, and anyone on the same wifi could read
+it, including the token. The simple habit is to use the Tailscale link
+everywhere, including at home.
+
+Adding real HTTPS with `tailscale serve` is possible (it needs HTTPS
+certificates enabled for the tailnet) but it is cosmetic: it replaces a
+misleading warning with a padlock and protects nothing that Tailscale is not
+already protecting. It also changes the address, and the phone stores the
+pairing token per address, so you would pair once more.
+
+## One setting worth changing
+
+Tailscale node keys expire after about 180 days by default. When the Mac mini's
+key expires it drops off the tailnet and nothing on the Mac looks wrong — the
+phone simply stops reaching it. Turn expiry off for the Mac (not the phone) at
+[login.tailscale.com/admin/machines](https://login.tailscale.com/admin/machines):
+the **⋯** menu next to the machine, then **Disable key expiry**.
