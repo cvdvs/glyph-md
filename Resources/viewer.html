@@ -2142,10 +2142,18 @@ window.__glyphInstallChrome = function () {
     }));
   }
 
+  // A .txt is PLAIN TEXT, not markdown: it opens in the literal view and stays
+  // there, so the renderer and serializer never touch it and it is saved exactly
+  // as typed. The formatted view normalizes what it edits (bullet markers,
+  // spacing) — right for a .md, wrong for a file that must come back byte for
+  // byte. Mirrors -isPlainText in the macOS app.
+  const PLAIN_EXT = /\.(txt|text|log)$/i;
+  const isPlainName = (name) => PLAIN_EXT.test(name || "");
+
   function openDoc(name, text, handle, dir) {
     const d = { id: nextId++, name: name || "Untitled.md", text: text || "",
                 dirty: false, handle: handle || null, scrollY: 0,
-                dir: dir || null };
+                dir: dir || null, plain: isPlainName(name) };
     docs.push(d);
     activate(d.id);
     return d;
@@ -2166,8 +2174,15 @@ window.__glyphInstallChrome = function () {
       // opened first, and a link in the second note looks beside the first one.
       postToApp({ type: "active", id: d.id });
     }
-    window.renderMarkdown(d.text);
-    if (document.body.classList.contains("glyph-raw")) rawArea.value = d.text;
+    if (d.plain) {
+      // Plain text never reaches the renderer. The literal view IS the editor
+      // for it, so the file comes back exactly as it went in.
+      document.body.classList.add("glyph-raw");
+      rawArea.value = d.text;
+    } else {
+      document.body.classList.remove("glyph-raw");
+      window.renderMarkdown(d.text);
+    }
     paintTabs();
     paintStatus();
     document.title = d.name + " — Glyph";
@@ -2367,7 +2382,7 @@ window.__glyphInstallChrome = function () {
       if (!res.ok) { flash("Could not open that file"); return; }
       const data = await res.json();
       const name = rel.indexOf("/") >= 0 ? rel.slice(rel.lastIndexOf("/") + 1) : rel;
-      const d = openDoc(name, data.text, null);
+      const d = openDoc(name, data.text, null);   // openDoc sets .plain from the name
       d.serverPath = rel;
       d.mtime = data.mtime;
       d.dirty = false;
@@ -2588,6 +2603,13 @@ window.__glyphInstallChrome = function () {
 
   /* ---------- raw view ---------- */
   function toggleRaw() {
+    const d0 = active();
+    if (d0 && d0.plain) {
+      // A plain text file has no formatted view — rendering it as markdown and
+      // serializing it back is exactly what would change the file.
+      flash("Plain text — rename to .md to format it");
+      return;
+    }
     const on = document.body.classList.toggle("glyph-raw");
     const d = active();
     if (!d) return;
@@ -2610,6 +2632,9 @@ window.__glyphInstallChrome = function () {
     d.dirty = true;
     paintTabs();
     paintStatus();
+    // Edits to a plain text file arrive here rather than through the formatted
+    // editor, so this is where its autosave has to be triggered.
+    if (serverHost() && d.serverPath) scheduleServerSave(d);
   });
 
   /* ---------- theme ---------- */

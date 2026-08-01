@@ -210,6 +210,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 @property (nonatomic, assign) BOOL roundTripChecked;
 @property (nonatomic, assign) BOOL roundTripSafe;
 @property (nonatomic, readonly) BOOL isTooLargeToRender;
+@property (nonatomic, readonly) BOOL isPlainText;
 @end
 
 @implementation MarkdownDocument
@@ -223,6 +224,20 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 }
 
 - (BOOL)isTooLargeToRender { return (self.text ?: @"").length > kGlyphFormattedViewLimit; }
+
+// A .txt is PLAIN TEXT, not markdown. It opens in the literal view and stays
+// there: the formatted view is a live editor that normalizes what it touches
+// (bullet markers, spacing) — legitimate for a .md, but a .txt is meant to come
+// back byte for byte, so the renderer and serializer never see one. The raw view
+// writes exactly what is on screen, which is the whole guarantee.
+- (BOOL)isPlainText {
+    NSString *ext = self.fileURL.pathExtension.lowercaseString;
+    if (!ext.length) return NO;
+    static NSSet *plain;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ plain = [NSSet setWithArray:@[@"txt", @"text", @"log"]]; });
+    return [plain containsObject:ext];
+}
 
 + (BOOL)autosavesInPlace { return YES; }
 + (BOOL)canConcurrentlyReadDocumentsOfType:(NSString *)typeName { return NO; }
@@ -419,7 +434,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         }
     });
 
-    self.editing = (self.text.length == 0) || self.isTooLargeToRender;
+    self.editing = self.isPlainText || (self.text.length == 0) || self.isTooLargeToRender;
     [self loadTemplateHTML];
     [self applyMode];
     [self updateWordCount];
@@ -564,6 +579,18 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 #pragma mark - Mode switching
 
 - (void)toggleEditMode:(id)sender {
+    if (self.editing && self.isPlainText) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"This is a plain text file";
+        alert.informativeText =
+            @"Glyph shows .txt files exactly as they are, and saves them exactly as "
+            @"you leave them. The formatted view tidies markdown as you edit, which "
+            @"would change a plain text file, so it stays off here. Everything else "
+            @"works — editing, find, and saving. Rename the file to .md to format it.";
+        [alert addButtonWithTitle:@"OK"];
+        [alert beginSheetModalForWindow:self.windowForSheet completionHandler:nil];
+        return;
+    }
     if (self.editing && self.isTooLargeToRender) {
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"This file is too big for the formatted view";
@@ -599,8 +626,10 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         }
         // Coloring only happens while the raw view is on screen. Typing in the
         // formatted view syncs text into this storage constantly, and highlighting
-        // text nobody is looking at is pure cost.
-        self.highlighter.enabled = YES;
+        // text nobody is looking at is pure cost. A plain text file gets NO
+        // markdown coloring — nothing in it is markdown, so painting a leading "#"
+        // as a heading would be a lie about the file.
+        self.highlighter.enabled = !self.isPlainText;
         [self refreshGutter];
         self.webView.hidden = YES;
         self.scrollView.hidden = NO;
@@ -1087,6 +1116,8 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 
 - (void)renderMarkdown {
     if (!self.pageReady) return;
+    // A plain text file never reaches the renderer or the serializer.
+    if (self.isPlainText) return;
     if (self.isTooLargeToRender) return;
     NSString *t = self.text ?: @"";
     NSData *json = [NSJSONSerialization dataWithJSONObject:@[t] options:0 error:NULL];
@@ -1114,6 +1145,9 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 // of the author's words would be lost, the formatted view goes read-only so the
 // serializer can never reach the file. The raw view still edits it exactly.
 - (void)verifyRoundTrip {
+    // A plain text file is never round-tripped through the page, so there is
+    // nothing to verify and the guard has no opinion about it.
+    if (self.isPlainText) { self.roundTripChecked = YES; self.roundTripSafe = NO; return; }
     if (self.roundTripChecked || !self.fileURL) return;
     NSString *original = self.text ?: @"";
     if (original.length == 0) { self.roundTripChecked = YES; self.roundTripSafe = YES; return; }

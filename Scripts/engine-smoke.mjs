@@ -253,6 +253,24 @@ if (chromeMode) {
       document.getElementById("glyph-newtab").click();
       r.newTabOpens = document.querySelectorAll(".glyph-tab").length === 2;
 
+      // A .txt is PLAIN TEXT: it opens in the literal view and never reaches the
+      // markdown renderer, so it is saved exactly as typed.
+      // Newlines come from fromCharCode because a backslash-n ANYWHERE in this
+      // template literal — including in a comment — becomes a REAL newline in
+      // the injected JS, which ends the comment early and breaks the syntax.
+      const NL = String.fromCharCode(10);
+      const plainSrc = ["* not a bullet", "#hashtag not a heading",
+                        "trailing spaces   ", ""].join(NL);
+      window.__glyphChromeReady("notes.txt", plainSrc);
+      const plainDoc = document.querySelectorAll(".glyph-tab").length;
+      r.txtOpensRaw = document.body.classList.contains("glyph-raw");
+      r.txtShowsLiteralText = document.getElementById("glyph-raw").value === plainSrc;
+      // Toggling the formatted view must be refused for plain text.
+      const rawBtn2 = document.querySelector('[title^="Raw markdown"]');
+      if (rawBtn2) rawBtn2.click();
+      r.txtStaysRaw = document.body.classList.contains("glyph-raw");
+      r.txtTabOpened = plainDoc >= 2;
+
       // A document too large to render live must fall back to the raw view
       // instead of freezing the window parsing it (the portable shell has no
       // native editor to fall back to, as the macOS app does).

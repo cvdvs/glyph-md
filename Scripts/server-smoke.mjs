@@ -4,8 +4,9 @@
 //
 // Starts server/glyph-server.mjs against a temp folder and asserts, over real
 // HTTP, that: the token is required; a path can never read or write outside the
-// served folder (traversal, absolute, symlink-out); only .md is served; a
-// legitimate read/write round-trips; and a stale write is refused. This is the
+// served folder (traversal, absolute, symlink-out); only text files are served;
+// a legitimate read/write round-trips; a .txt comes back byte for byte; and a
+// stale write is refused. This is the
 // suite that stands between a phone on the wifi and the rest of the disk, so
 // every "blocked" case here is a file that must stay untouched.
 import { spawn } from "node:child_process";
@@ -29,7 +30,8 @@ const drafts = path.join(root, "drafts");
 await mkdir(path.join(drafts, "reports"), { recursive: true });
 await writeFile(path.join(drafts, "a.md"), "# A\n\nbody\n");
 await writeFile(path.join(drafts, "reports", "b.md"), "# B\n");
-await writeFile(path.join(drafts, "notes.txt"), "not markdown\n");
+await writeFile(path.join(drafts, "notes.txt"), "plain text, served literally\n");
+await writeFile(path.join(drafts, "photo.png"), "not a text file at all\n");
 await writeFile(path.join(root, "secret.md"), "SECRET OUTSIDE THE ROOT\n");
 // A symlink inside the root that points OUT of it — the classic escape.
 await symlink(path.join(root, "secret.md"), path.join(drafts, "escape.md")).catch(() => {});
@@ -66,7 +68,10 @@ async function main() {
   const list = await r.json();
   const names = (list.files || []).map((f) => f.path).sort();
   ok("lists the .md files under the root", names.includes("a.md") && names.includes("reports/b.md"));
-  ok("does not list non-markdown", !names.includes("notes.txt"));
+  // .txt is served (shown literally by the page, saved byte for byte); a
+  // non-text file is not served at all.
+  ok("lists plain text files too", names.includes("notes.txt"));
+  ok("does not list non-text files", !names.includes("photo.png"));
   // escape.md is a symlink to outside; listing it is harmless (reading is what
   // matters) but ideally it is skipped. Not asserted either way here.
 
@@ -82,7 +87,26 @@ async function main() {
     ok(`read blocked: ${bad}`, rr.status === 400 || rr.status === 404);
   }
   r = await fetch(`${base}/api/file?path=notes.txt`, { headers: auth() });
-  ok("read of a non-.md is blocked", r.status === 400);
+  ok("reads a plain text file", r.status === 200 && (await r.json()).text.includes("served literally"));
+  r = await fetch(`${base}/api/file?path=photo.png`, { headers: auth() });
+  ok("read of a non-text file is blocked", r.status === 400);
+  r = await fetch(`${base}/api/file`, {
+    method: "PUT", headers: auth({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path: "photo.png", text: "nope" }),
+  });
+  ok("write of a non-text file is blocked", r.status === 400);
+
+  // A plain text file must come back BYTE FOR BYTE — the markdown renderer must
+  // never touch it. Trailing spaces and lone asterisks are exactly what a
+  // markdown round-trip would rewrite.
+  const plainBody = "* not a bullet\n#hashtag not a heading\n   indented   \ntrailing spaces   \n";
+  r = await fetch(`${base}/api/file`, {
+    method: "PUT", headers: auth({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path: "notes.txt", text: plainBody }),
+  });
+  ok("writes a plain text file", r.status === 200);
+  ok("a plain text file is stored byte for byte",
+     (await readFile(path.join(drafts, "notes.txt"), "utf8")) === plainBody);
 
   // A symlink inside the root pointing out must not be readable.
   r = await fetch(`${base}/api/file?path=escape.md`, { headers: auth() });

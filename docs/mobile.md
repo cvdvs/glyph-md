@@ -43,7 +43,9 @@ Node standard library only, nothing to install. `--port=NNNN` changes the port.
 - **A request can never leave the served folder.** Every path is treated as a
   name inside the folder; `..`, absolute paths, and symlinks that point outside
   are all refused. `Scripts/server-smoke.mjs` is the test that proves it.
-- **Only `.md` files** are listed, read, and written.
+- **Only text files** are listed, read, and written — markdown plus `.txt`,
+  `.text` and `.log`. A plain text file opens in the literal view and is saved
+  byte for byte; the markdown renderer never touches it.
 - **Keep it on your home network.** It binds LAN-wide so the phone can reach it,
   which is fine behind a home router. **Do not port-forward it to the public
   internet** — it would be a file-editing endpoint open to the world.

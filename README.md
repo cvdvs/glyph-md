@@ -39,6 +39,9 @@ Open any `.md` with right-click → Open With → Glyph. To make Glyph the defau
 clang -fobjc-arc Scripts/set-default-md.m -o /tmp/glyph-default -framework Cocoa -framework UniformTypeIdentifiers && /tmp/glyph-default
 ```
 
+Add `--with-txt` to that last command to make Glyph the default for `.txt` as
+well. `.csv`, `.json` and source files carry their own types and are unaffected.
+
 Requires macOS 13+. Uninstall by deleting `/Applications/Glyph.app`.
 
 ### Windows and Linux
@@ -125,6 +128,14 @@ do **not** port-forward it to the internet; for access away from home, put both
 devices on [Tailscale](https://tailscale.com) (free, encrypted, private) and use
 the Tailscale address. See [docs/mobile.md](docs/mobile.md) for the always-on
 setup and Tailscale steps.
+
+## Plain text files
+
+Glyph opens `.txt`, `.text` and `.log` as **plain text**: no markdown
+formatting, no syntax colouring, and saved back exactly as typed — byte for
+byte. The formatted view tidies markdown as you edit (bullet markers, spacing),
+which is right for a `.md` and wrong for a file that has to come back unchanged,
+so it stays off for plain text. Rename a file to `.md` if you want it formatted.
 
 ## Shortcuts
 

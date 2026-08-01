@@ -1,9 +1,9 @@
-// Glyph server — read and edit a folder of .md files from your phone.
+// Glyph server — read and edit a folder of notes from your phone.
 //
 //   node server/glyph-server.mjs ~/Documents/drafts
 //
 // It runs on the always-on machine (a Mac mini) and serves the SAME Glyph
-// interface the desktop app uses, plus a list of the .md files in one folder.
+// interface the desktop app uses, plus a list of the text files in one folder.
 // A phone on the same wifi opens it in a browser and edits the files directly —
 // there is ONE copy of every file, on this machine, so it is genuinely
 // real-time and there is nothing to sync and no conflict to resolve. Close the
@@ -19,7 +19,9 @@
 //   - Every path is sandboxed to the served folder: a request can never read or
 //     write a file outside it (the GlyphVault discipline — a name, resolved and
 //     re-checked against the root, symlinks defeated).
-//   - Only .md/.markdown files are listed, read and written.
+//   - Only markdown and plain-text files are listed, read and written. A .txt
+//     is served literally and saved byte for byte — the page pins it to its
+//     literal view, so the markdown renderer never reformats a plain file.
 //   - Bind is LAN-wide so the phone can reach it, but it is meant for a home
 //     network behind a router. Do NOT port-forward it to the open internet; for
 //     access away from home use a private tunnel (Tailscale), which is
@@ -35,7 +37,11 @@ import path from "node:path";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.dirname(HERE);
 
+// Markdown is rendered; plain text is served literally and saved byte for byte
+// (the page pins a .txt to its literal view). Both are text files the owner
+// wants to read on her phone, so both are served.
 const MD_EXT = new Set([".md", ".markdown", ".mdown", ".mkd"]);
+const PLAIN_EXT = new Set([".txt", ".text", ".log"]);
 const SKIP_DIRS = new Set([".git", ".obsidian", "node_modules", ".trash", ".DS_Store"]);
 const MAX_FILES = 5000;
 const MAX_WRITE_BYTES = 25 * 1024 * 1024;  // a .md note far past anything real
@@ -45,7 +51,7 @@ const args = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const port = Number(
   (process.argv.find((a) => a.startsWith("--port=")) || "").split("=")[1] || 4321);
 if (args.length !== 1) {
-  console.error("usage: node server/glyph-server.mjs <folder-of-md-files> [--port=4321]");
+  console.error("usage: node server/glyph-server.mjs <folder-of-notes> [--port=4321]");
   process.exit(2);
 }
 let ROOT;
@@ -104,8 +110,9 @@ function resolveInRoot(rel) {
   return abs;
 }
 
-function isMarkdown(p) {
-  return MD_EXT.has(path.extname(p).toLowerCase());
+function isServable(p) {
+  const e = path.extname(p).toLowerCase();
+  return MD_EXT.has(e) || PLAIN_EXT.has(e);
 }
 
 // ------------------------------------------------------------- file listing
@@ -125,7 +132,7 @@ async function listFiles() {
       const rel = relBase ? relBase + "/" + e.name : e.name;
       if (e.isDirectory()) {
         await walk(abs, rel);
-      } else if (e.isFile() && isMarkdown(e.name)) {
+      } else if (e.isFile() && isServable(e.name)) {
         try {
           const s = await stat(abs);
           out.push({ path: rel, name: e.name, size: s.size, mtime: Math.floor(s.mtimeMs) });
@@ -241,7 +248,7 @@ const server = createServer(async (req, res) => {
 
       if (req.method === "GET" && p === "/api/file") {
         const abs = resolveInRoot(url.searchParams.get("path") || "");
-        if (!abs || !isMarkdown(abs)) return json(res, 400, { error: "bad path" });
+        if (!abs || !isServable(abs)) return json(res, 400, { error: "bad path" });
         try {
           const real = realpathSync(abs);
           if (real !== ROOT && !real.startsWith(ROOT + path.sep)) {
@@ -262,7 +269,7 @@ const server = createServer(async (req, res) => {
           return json(res, 400, { error: "bad body" });
         }
         const abs = resolveInRoot(body && body.path);
-        if (!abs || !isMarkdown(abs) || typeof body.text !== "string") {
+        if (!abs || !isServable(abs) || typeof body.text !== "string") {
           return json(res, 400, { error: "bad path" });
         }
         // The PARENT folder must resolve inside the root, for a NEW file too —

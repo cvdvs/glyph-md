@@ -424,7 +424,7 @@ static std::vector<std::string> ask_open_paths(webview_t w) {
   std::memset(&ofn, 0, sizeof ofn);
   ofn.lStructSize = sizeof ofn;
   ofn.hwndOwner = static_cast<HWND>(webview_get_window(w));
-  ofn.lpstrFilter = L"Markdown\0*.md;*.markdown;*.mdown;*.mkd\0All files\0*.*\0";
+  ofn.lpstrFilter = L"Text notes\0*.md;*.markdown;*.mdown;*.mkd;*.txt;*.text\0All files\0*.*\0";
   ofn.lpstrFile = buf.data();
   ofn.nMaxFile = static_cast<DWORD>(buf.size());
   ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT |
@@ -502,11 +502,13 @@ static std::vector<std::string> ask_open_paths(webview_t w) {
       "_Cancel", GTK_RESPONSE_CANCEL, "_Open", GTK_RESPONSE_ACCEPT, nullptr);
   gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), TRUE);
   GtkFileFilter *filter = gtk_file_filter_new();
-  gtk_file_filter_set_name(filter, "Markdown");
+  gtk_file_filter_set_name(filter, "Text notes");
   gtk_file_filter_add_pattern(filter, "*.md");
   gtk_file_filter_add_pattern(filter, "*.markdown");
   gtk_file_filter_add_pattern(filter, "*.mdown");
   gtk_file_filter_add_pattern(filter, "*.mkd");
+  gtk_file_filter_add_pattern(filter, "*.txt");
+  gtk_file_filter_add_pattern(filter, "*.text");
   gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
   if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
     GSList *names = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog));
@@ -556,12 +558,16 @@ static void open_externally(const std::string &url) {
 // must never be handed to the system to launch. See CLAUDE.md rule 23.
 enum UrlAction { kIgnore, kExternal, kOpenNote };
 
+// Markdown is rendered; .txt is shown literally by the page. Both are documents
+// Glyph can open from a link — and neither is executable, which is the point of
+// the allowlist (a link to a .command or .desktop must never open anything).
 static bool has_markdown_extension(const std::string &p) {
   size_t dot = p.find_last_of('.');
   if (dot == std::string::npos) return false;
   std::string ext = p.substr(dot + 1);
   for (auto &c : ext) c = static_cast<char>(tolower(c));
-  return ext == "md" || ext == "markdown" || ext == "mdown" || ext == "mkd";
+  return ext == "md" || ext == "markdown" || ext == "mdown" || ext == "mkd" ||
+         ext == "txt" || ext == "text";
 }
 
 static bool starts_with_ci(const std::string &s, const char *prefix) {
