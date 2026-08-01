@@ -39,8 +39,11 @@ Open any `.md` with right-click → Open With → Glyph. To make Glyph the defau
 clang -fobjc-arc Scripts/set-default-md.m -o /tmp/glyph-default -framework Cocoa -framework UniformTypeIdentifiers && /tmp/glyph-default
 ```
 
-Add `--with-txt` to that last command to make Glyph the default for `.txt` as
-well. `.csv`, `.json` and source files carry their own types and are unaffected.
+Glyph also registers for `.txt`, so it shows up under right-click → Open With
+straight away. To make it the **default** for text files, macOS 26 requires you
+to do it yourself (an app is no longer allowed to claim a built-in type): right-click
+any `.txt` → **Get Info** → under "Open with" choose **Glyph** → **Change All…**.
+`.csv`, `.json` and source files carry their own types and are unaffected.
 
 Requires macOS 13+. Uninstall by deleting `/Applications/Glyph.app`.
 

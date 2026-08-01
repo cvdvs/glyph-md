@@ -5,11 +5,19 @@
 //   /tmp/glyph-default            # markdown only
 //   /tmp/glyph-default --with-txt # markdown AND plain text (.txt)
 //
-// --with-txt claims public.plain-text, which is what .txt and .text map to.
+// --with-txt asks for public.plain-text, which is what .txt and .text map to.
 // Checked on this machine: .csv, .json and source files carry their OWN types
 // (public.comma-separated-values-text, public.json, public.python-script) and
-// are NOT affected — so this takes over .txt and files with no more specific
-// type, and nothing else. Undo it in Finder: Get Info → Open with → Change All.
+// are NOT affected.
+//
+// Markdown works. .txt does NOT, on macOS 26: the system no longer lets an app
+// make itself the default for a built-in type like public.plain-text. The modern
+// setDefaultApplicationAtURL never calls its completion handler, and the older
+// LSSetDefaultRoleHandlerForContentType returns noErr and changes nothing —
+// measured on 26.5.2 with Glyph correctly registered (lsregister shows
+// "claimed UTIs: public.plain-text, rank: Default"). That choice now belongs to
+// the user in Finder, so this script checks the real handler afterwards and
+// prints the steps rather than claiming a success it did not achieve.
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -72,9 +80,30 @@ int main(int argc, const char **argv) {
             [@"probe\n" writeToFile:probePath atomically:YES encoding:NSUTF8StringEncoding error:NULL];
             NSURL *handler = [[NSWorkspace sharedWorkspace]
                 URLForApplicationToOpenURL:[NSURL fileURLWithPath:probePath]];
-            printf("default app for .%s now: %s\n",
-                   name.pathExtension.UTF8String, handler.path.UTF8String ?: "unknown");
+            BOOL isGlyph = [handler.path isEqualToString:app.path];
+            printf("default app for .%s now: %s%s\n",
+                   name.pathExtension.UTF8String, handler.path.UTF8String ?: "unknown",
+                   isGlyph ? "" : "   <-- not Glyph");
             [[NSFileManager defaultManager] removeItemAtPath:probePath error:NULL];
+
+            // macOS 26 stopped letting an app make ITSELF the default for a
+            // system type like public.plain-text: both the modern
+            // setDefaultApplicationAtURL (its completion handler never fires)
+            // and the older LSSetDefaultRoleHandlerForContentType (returns
+            // noErr and changes nothing) are ignored. Only the user can do it,
+            // in Finder. Say so plainly instead of reporting success.
+            if (!isGlyph && [name.pathExtension isEqualToString:@"txt"]) {
+                printf("\n"
+                  "  macOS will not let an app set itself as the default for .txt —\n"
+                  "  that choice is yours to make, in Finder:\n"
+                  "\n"
+                  "    1. Right-click any .txt file -> Get Info\n"
+                  "    2. Under \"Open with\", choose Glyph\n"
+                  "    3. Click \"Change All…\" and confirm\n"
+                  "\n"
+                  "  Glyph is already registered for .txt, so it appears in that\n"
+                  "  list and in right-click -> Open With straight away.\n\n");
+            }
         }
     }
     return 0;

@@ -47,8 +47,14 @@
 			<string>Plain Text Document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
+			<!-- Default, not Alternate: LaunchServices silently REFUSES to make an
+			     Alternate-rank app the default for a type (the completion handler of
+			     setDefaultApplicationAtURL never fires at all), so Get Info -> Change
+			     All and Scripts/set-default-md.m --with-txt could not take effect.
+			     Declaring Default only means Glyph is ELIGIBLE; macOS keeps the
+			     user's existing choice until they change it. -->
 			<key>LSHandlerRank</key>
-			<string>Alternate</string>
+			<string>Default</string>
 			<key>NSDocumentClass</key>
 			<string>MarkdownDocument</string>
 			<key>LSItemContentTypes</key>
