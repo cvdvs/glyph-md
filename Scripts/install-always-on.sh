@@ -25,7 +25,10 @@ set -e
 
 HERE=${0:A:h}
 REPO=${HERE:h}
-APP="$HOME/Applications/Glyph Server.app"
+# /Applications, not ~/Applications: the Full Disk Access file picker opens at
+# /Applications and does not show the home one, so an app placed there is
+# effectively invisible to the person trying to grant the permission.
+APP="/Applications/Glyph Server.app"
 EXE="$APP/Contents/MacOS/glyph-server"
 LABEL=com.glyph.server
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -46,6 +49,42 @@ case "${1:-}" in
   say "Security > Full Disk Access, since nothing uses it now."
   exit 0
   ;;
+--start)
+  # Loading is a separate step from building on purpose: the Full Disk Access
+  # grant has to exist first, or launchd starts a job that is denied the notes
+  # and retries forever. This also VERIFIES rather than assuming — the whole
+  # point of the exercise is that a silent failure looks like the server
+  # vanishing, from a phone, with nothing on screen to explain it.
+  [[ -x "$EXE" ]] || { say "Not built yet. Run:  $0 <folder-to-serve>"; exit 1; }
+  [[ -f "$PLIST" ]] || { say "No launch agent. Run:  $0 <folder-to-serve>"; exit 1; }
+  set +e
+  launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null
+  set -e
+  launchctl bootstrap "$DOMAIN" "$PLIST"
+  launchctl enable "$DOMAIN/$LABEL"
+  launchctl kickstart -k "$DOMAIN/$LABEL"
+  sleep 3
+
+  if pgrep -f "glyph-server.mjs" >/dev/null; then
+    say "Running. It will now start by itself after every restart."
+    say ""
+    tail -12 "$LOG" 2>/dev/null | sed 's/^/  /'
+  else
+    say "It did not start. The log says:"
+    say ""
+    tail -6 "$LOG" 2>/dev/null | sed 's/^/  /'
+    say ""
+    if tail -6 "$LOG" 2>/dev/null | grep -qi "can.t open input file\|Operation not permitted\|denied"; then
+      say "  That is the permission. 'Glyph Server' needs Full Disk Access:"
+      say "  System Settings > Privacy & Security > Full Disk Access > + >"
+      say "  Cmd-Shift-G > ~/Applications > Glyph Server, switch ON."
+      say "  Then run this again."
+    fi
+    exit 1
+  fi
+  exit 0
+  ;;
+
 --status)
   if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
     say "launch agent: installed"
@@ -91,14 +130,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
-# The stub. Frozen on purpose — see the header. It takes the folder from the
-# launch agent so even that is not baked into the signed bundle.
-cat > "$EXE" <<'STUB'
-#!/bin/zsh
-# Glyph Server — thin stub. The real code lives in the Glyph repo; this exists so
-# macOS has a stable app to attach the Full Disk Access grant to.
-exec "$GLYPH_LAUNCHER" "$@"
-STUB
+# The stub is COMPILED, not a shell script. macOS attaches a Full Disk Access
+# grant to a signed program, and a script is not one: launchd execs /bin/zsh with
+# the script as input, so the process TCC sees is /bin/zsh, which has no grant.
+# Measured — with a script here the grant had no effect at all. See
+# shell/glyph-server-stub.c for the whole story.
+cc -O2 -o "$EXE" "$REPO/shell/glyph-server-stub.c" || {
+  say "could not compile the launcher stub ($REPO/shell/glyph-server-stub.c)"
+  exit 1
+}
 chmod +x "$EXE"
 
 # Ad-hoc signature: gives the bundle a stable identity for TCC without needing a
@@ -144,7 +184,7 @@ say "  itself this:"
 say ""
 say "    1. Open System Settings > Privacy & Security > Full Disk Access"
 say "    2. Click +   (you will be asked for your Mac password)"
-say "    3. Press Cmd-Shift-G and paste:   ~/Applications"
+say "    3. Choose Glyph Server from the Applications list that opens"
 say "    4. Choose 'Glyph Server', and make sure its switch is ON"
 say ""
 say "  Then run:   Scripts/install-always-on.sh --start"
