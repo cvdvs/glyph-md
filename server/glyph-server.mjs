@@ -29,7 +29,8 @@
 import { createServer } from "node:http";
 import { readFile, writeFile, readdir, stat, rename, mkdir, unlink } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { realpathSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { networkInterfaces, homedir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -318,10 +319,43 @@ function lanAddresses() {
   const ifaces = networkInterfaces();
   for (const name of Object.keys(ifaces)) {
     for (const ni of ifaces[name] || []) {
-      if (ni.family === "IPv4" && !ni.internal) out.push(ni.address);
+      // 100.64.0.0/10 is the carrier-grade NAT range Tailscale uses for tailnet
+      // addresses. It is not a LAN address and is reported separately below.
+      if (ni.family === "IPv4" && !ni.internal && !isTailscaleIPv4(ni.address)) {
+        out.push(ni.address);
+      }
     }
   }
   return out;
+}
+
+function isTailscaleIPv4(addr) {
+  const p = addr.split(".").map(Number);
+  return p[0] === 100 && p[1] >= 64 && p[1] <= 127;
+}
+
+// The tailnet name, when Tailscale is running. This is the address that works
+// away from home — on cellular, on a walk — because the tunnel reaches the
+// machine wherever it is. The server needs no configuration for it: it already
+// binds 0.0.0.0, which includes the Tailscale interface.
+function tailscaleHost() {
+  const cli = [
+    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    "/usr/local/bin/tailscale",
+    "/opt/homebrew/bin/tailscale",
+  ].find((p) => existsSync(p));
+  if (!cli) return null;
+  try {
+    const raw = execFileSync(cli, ["status", "--json"], {
+      timeout: 4000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    });
+    const self = JSON.parse(raw).Self || {};
+    if (!self.Online) return null;
+    const dns = (self.DNSName || "").replace(/\.$/, "");
+    return dns || (self.TailscaleIPs || []).find(isTailscaleIPv4) || null;
+  } catch {
+    return null;   // Tailscale present but not running, or not signed in
+  }
 }
 
 server.listen(port, "0.0.0.0", () => {
@@ -341,8 +375,22 @@ server.listen(port, "0.0.0.0", () => {
   if (addrs.length > 1) {
     console.log(`  Other addresses: ${addrs.slice(1).join(", ")}`);
   }
+  const ts = tailscaleHost();
+  if (ts) {
+    console.log("");
+    console.log("  ANYWHERE (on a walk, on cellular) - via your private Tailscale network:");
+    console.log("");
+    console.log(`      http://${ts}:${port}/#token=${TOKEN}`);
+    console.log("");
+    console.log("  That address only works from your own signed-in devices, and the");
+    console.log("  traffic is encrypted between them by Tailscale.");
+  } else {
+    console.log("");
+    console.log("  For access away from home, install Tailscale on this Mac and your");
+    console.log("  phone and sign in to the same account - the link appears here.");
+  }
   console.log("");
-  console.log("  Keep this on the home wifi. Do not port-forward it to the internet;");
-  console.log("  for access away from home, use Tailscale.  Ctrl-C to stop.");
+  console.log("  Do NOT port-forward this to the internet, and do not enable Tailscale");
+  console.log("  Funnel on it: both would put your notes on the public web.  Ctrl-C to stop.");
   console.log("");
 });
