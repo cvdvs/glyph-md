@@ -4,6 +4,11 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src '/*__CSP_SCRIPT__*/'; style-src '/*__CSP_STYLE__*/'; img-src 'self' data: file:; connect-src 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'">
 <meta charset="utf-8">
 <meta name="color-scheme" content="light dark">
+<!-- Without this a phone lays the page out at ~980px and scales the result
+     down, so every media query below 640px never matches and the whole
+     interface arrives as a shrunken desktop. viewport-fit=cover lets the safe
+     area insets work around the notch and the home indicator. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style nonce="/*__CSP_NONCE__*/">
   :root {
     --bg: #ffffff;
@@ -204,7 +209,10 @@
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
       "Segoe UI Variable Text", "Segoe UI", Inter, Cantarell, "Adwaita Sans",
       "Noto Sans", "DejaVu Sans", "Helvetica Neue", Arial, sans-serif;
-    font-size: 15.5px;
+    /* The reader's text size. Everything in the document is sized in em, so
+       this one number scales the whole page; the chrome is in fixed px and is
+       deliberately not affected. The A-/A+ buttons set it and remember it. */
+    font-size: var(--reader-size, 15.5px);
     line-height: 1.68;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -497,12 +505,12 @@
     line-height: 1.5;
   }
   #glyph-protected b { color: var(--co-warning); }
-  body.glyph-chrome #glyph-protected { top: 86px; }
+  body.glyph-chrome #glyph-protected { top: var(--glyph-bar-h, 86px); }
 
   /* ---------- optional chrome (Windows/Linux/browser only) ----------
      Everything below is inert unless window.__glyphChrome is set, which the
      macOS app never does — there the tabs, toolbar and menus are native. */
-  body.glyph-chrome { padding-top: 86px; }
+  body.glyph-chrome { padding-top: var(--glyph-bar-h, 86px); }
   body.glyph-chrome #content { padding-top: 20px; }
 
   #glyph-bar {
@@ -603,7 +611,7 @@
   #glyph-raw {
     display: none;
     position: fixed;
-    top: 86px; left: 0; right: 0; bottom: 0;
+    top: var(--glyph-bar-h, 86px); left: 0; right: 0; bottom: 0;
     z-index: 15;
     width: 100%;
     box-sizing: border-box;
@@ -680,14 +688,47 @@
   .glyph-drawer-empty { padding: 12px 14px; color: var(--muted); font-size: 13px; }
 
   /* ---- touch / small screen (chrome only, so macOS is untouched) ---- */
+  /* ---- the drawer's folder tree ---- */
+  .glyph-tree-row {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    text-align: left; border: none; background: transparent; cursor: pointer;
+    color: var(--fg); border-radius: 8px;
+    padding: 9px 8px; font-size: 14px; line-height: 1.25;
+  }
+  .glyph-tree-row:hover { background: rgba(var(--fg-rgb), 0.06); }
+  .glyph-tree-row.current { background: rgba(var(--accent-rgb), 0.13); color: var(--accent); }
+  .glyph-tree-row .tw { flex: none; width: 14px; text-align: center; color: var(--faint); font-size: 10px; }
+  .glyph-tree-row .tn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .glyph-tree-row.folder .tn { color: var(--muted); font-weight: 600; }
+  .glyph-tree-row .tc { margin-left: auto; color: var(--faint); font-size: 11px; flex: none; padding-left: 8px; }
+  .glyph-tree-kids { display: none; }
+  .glyph-tree-kids.open { display: block; }
+
+  /* Opens the file drawer. Pinned left of the tabs so it stays reachable when
+     the toolbar scrolls sideways on a narrow screen. */
+  #glyph-menu {
+    display: none;
+    flex: none; width: 42px; border: none; background: transparent;
+    color: var(--muted); font-size: 15px; cursor: pointer;
+    border-right: 1px solid var(--border);
+  }
+  body.glyph-server #glyph-menu { display: block; }
+
   @media (max-width: 640px) {
-    body.glyph-chrome #content { padding-left: 16px; padding-right: 16px; }
-    body.glyph-chrome #md { font-size: 17px; line-height: 1.65; }
-    body.glyph-chrome .glyph-btn { min-width: 38px; height: 38px; }
-    body.glyph-chrome #glyph-tools { height: 54px; }
-    body.glyph-chrome .glyph-tab { font-size: 13.5px; padding: 0 12px 0 14px; }
-    body.glyph-chrome #glyph-drawer { width: 86vw; max-width: 86vw; }
+    body.glyph-chrome #content { padding-left: 16px; padding-right: 16px; padding-top: 14px; }
+    /* Scale the READER, not #md directly: a fixed font-size here would win over
+       the A-/A+ control and make it do nothing on the one screen it matters on. */
+    body.glyph-chrome { --reader-size: 17px; }
+    body.glyph-chrome .glyph-btn { min-width: 40px; height: 40px; }
+    body.glyph-chrome #glyph-tools { height: 56px; gap: 2px; }
+    body.glyph-chrome #glyph-tabs { height: 42px; }
+    body.glyph-chrome .glyph-tab { font-size: 13.5px; padding: 0 10px 0 13px; max-width: 46vw; }
+    body.glyph-chrome .glyph-tab .x { width: 22px; height: 22px; line-height: 21px; font-size: 15px; }
+    body.glyph-chrome #glyph-drawer { width: 88vw; max-width: 88vw; }
+    body.glyph-chrome .glyph-tree-row { padding: 11px 8px; font-size: 15px; }
     body.glyph-chrome #glyph-status { bottom: max(10px, env(safe-area-inset-bottom)); }
+    body.glyph-chrome #content { padding-bottom: max(120px, env(safe-area-inset-bottom)); }
+    body.glyph-chrome #glyph-raw { padding-bottom: max(60px, env(safe-area-inset-bottom)); }
   }
 </style>
 </head>
@@ -2322,6 +2363,43 @@ window.__glyphInstallChrome = function () {
     return d.outerHTML;
   }
 
+  // Which folders are expanded, remembered between visits.
+  const openFolders = (() => {
+    try { return new Set(JSON.parse(localStorage.getItem("glyphOpenFolders") || "[]")); }
+    catch (e) { return new Set(); }
+  })();
+  function rememberFolders() {
+    try { localStorage.setItem("glyphOpenFolders", JSON.stringify([...openFolders])); }
+    catch (e) { /* private mode */ }
+  }
+
+  function buildTree(files) {
+    const root = { dirs: new Map(), files: [], count: 0 };
+    for (const f of files) {
+      const parts = f.path.split("/");
+      const base = parts.pop();
+      let node = root;
+      node.count++;
+      for (const p of parts) {
+        if (!node.dirs.has(p)) node.dirs.set(p, { dirs: new Map(), files: [], count: 0 });
+        node = node.dirs.get(p);
+        node.count++;
+      }
+      node.files.push({ path: f.path, base: base });
+    }
+    return root;
+  }
+
+  // Markdown loses its extension — it is the norm here — while a .txt keeps it,
+  // so it is obvious at a glance which files are plain text.
+  function fileLabel(base) {
+    return isPlainName(base) ? base : base.replace(/\.(md|markdown|mdown|mkd)$/i, "");
+  }
+
+  // Files are shown as a FOLDER TREE, not a flat list: a folder holding
+  // warhammer-fanfic/drafts/chapters repeated on fourteen rows is unreadable on
+  // a phone. Filtering flattens it again — when you are searching you want the
+  // matches, not the structure.
   function renderDrawer(rootName, filter) {
     drawer.textContent = "";
     const head = document.createElement("div");
@@ -2334,43 +2412,92 @@ window.__glyphInstallChrome = function () {
     search.type = "search";
     search.placeholder = "Filter…";
     search.value = filter || "";
-    search.addEventListener("input", () => renderList(search.value.toLowerCase()));
+    search.addEventListener("input", () => paint(search.value.trim().toLowerCase()));
     drawer.appendChild(search);
 
-    const list = document.createElement("ul");
+    const list = document.createElement("div");
     list.className = "glyph-drawer-list";
     drawer.appendChild(list);
 
-    function renderList(q) {
+    function makeRow(cls, depth, twisty, label, trailing) {
+      const b = document.createElement("button");
+      b.className = "glyph-tree-row " + cls;
+      b.style.paddingLeft = (8 + depth * 14) + "px";
+      const t = document.createElement("span");
+      t.className = "tw";
+      t.textContent = twisty;
+      const n = document.createElement("span");
+      n.className = "tn";
+      n.textContent = label;
+      b.appendChild(t);
+      b.appendChild(n);
+      if (trailing != null) {
+        const c = document.createElement("span");
+        c.className = "tc";
+        c.textContent = trailing;
+        b.appendChild(c);
+      }
+      return b;
+    }
+
+    function makeFileRow(path, base, depth, trailing) {
+      const b = makeRow("file", depth, "·", fileLabel(base), trailing);
+      const cur = active();
+      if (cur && cur.serverPath === path) b.classList.add("current");
+      b.addEventListener("click", () => openFromServer(path));
+      return b;
+    }
+
+    function renderNode(node, depth, prefix, into) {
+      const dirs = [...node.dirs.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      for (const entry of dirs) {
+        const name = entry[0], child = entry[1];
+        const path = prefix ? prefix + "/" + name : name;
+        const isOpen = openFolders.has(path);
+        const row = makeRow("folder", depth, isOpen ? "▾" : "▸", name, String(child.count));
+        const kids = document.createElement("div");
+        kids.className = "glyph-tree-kids" + (isOpen ? " open" : "");
+        row.addEventListener("click", () => {
+          const nowOpen = !kids.classList.contains("open");
+          kids.classList.toggle("open", nowOpen);
+          row.querySelector(".tw").textContent = nowOpen ? "▾" : "▸";
+          if (nowOpen) openFolders.add(path); else openFolders.delete(path);
+          rememberFolders();
+        });
+        into.appendChild(row);
+        renderNode(child, depth + 1, path, kids);
+        into.appendChild(kids);
+      }
+      for (const f of node.files) into.appendChild(makeFileRow(f.path, f.base, depth));
+    }
+
+    function paint(q) {
       list.textContent = "";
-      const shown = serverFiles.filter((f) => !q || f.path.toLowerCase().indexOf(q) >= 0);
-      if (!shown.length) {
-        const li = document.createElement("li");
-        li.className = "glyph-drawer-empty";
-        li.textContent = serverFiles.length ? "No match." : "No markdown files in this folder.";
-        list.appendChild(li);
+      if (q) {
+        const hits = serverFiles.filter((f) => f.path.toLowerCase().indexOf(q) >= 0);
+        if (!hits.length) {
+          const e = document.createElement("div");
+          e.className = "glyph-drawer-empty";
+          e.textContent = "No match.";
+          list.appendChild(e);
+          return;
+        }
+        for (const f of hits) {
+          const folder = f.path.indexOf("/") >= 0 ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
+          list.appendChild(makeFileRow(f.path, f.name, 0, folder || null));
+        }
         return;
       }
-      for (const f of shown) {
-        const li = document.createElement("li");
-        const a = document.createElement("button");
-        a.className = "glyph-drawer-item";
-        if (active() && active().serverPath === f.path) a.classList.add("current");
-        const nm = document.createElement("span");
-        nm.className = "glyph-drawer-name";
-        nm.textContent = f.name.replace(/\.(md|markdown|mdown|mkd)$/i, "");
-        const sub = document.createElement("span");
-        sub.className = "glyph-drawer-sub";
-        const folder = f.path.indexOf("/") >= 0 ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
-        sub.textContent = folder;
-        a.appendChild(nm);
-        if (folder) a.appendChild(sub);
-        a.addEventListener("click", () => openFromServer(f.path));
-        li.appendChild(a);
-        list.appendChild(li);
+      if (!serverFiles.length) {
+        const e = document.createElement("div");
+        e.className = "glyph-drawer-empty";
+        e.textContent = "No notes in this folder.";
+        list.appendChild(e);
+        return;
       }
+      renderNode(buildTree(serverFiles), 0, "", list);
     }
-    renderList((filter || "").toLowerCase());
+    paint((filter || "").trim().toLowerCase());
   }
 
   async function openFromServer(rel) {
@@ -2484,6 +2611,19 @@ window.__glyphInstallChrome = function () {
   bar.appendChild(toolsEl);
   document.body.appendChild(bar);
   document.body.classList.add("glyph-chrome");
+  if (serverHost()) document.body.classList.add("glyph-server");
+
+  // The bar is fixed at the top, so the page has to be padded by exactly its
+  // height. That height differs between desktop and mobile (taller touch rows),
+  // and a hardcoded guess hid the first lines of the document under the bar —
+  // so it is measured, and re-measured when the window changes.
+  function syncBarHeight() {
+    const h = Math.round(bar.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty("--glyph-bar-h", h + "px");
+  }
+  window.addEventListener("resize", syncBarHeight);
+  window.addEventListener("orientationchange", () => setTimeout(syncBarHeight, 120));
+  if (window.ResizeObserver) new ResizeObserver(syncBarHeight).observe(bar);
 
   const rawArea = document.createElement("textarea");
   rawArea.id = "glyph-raw";
@@ -2528,6 +2668,18 @@ window.__glyphInstallChrome = function () {
 
   function paintTabs() {
     tabsEl.replaceChildren();
+    if (serverHost()) {
+      // Left of the tabs and outside the horizontal scroll, so the way back to
+      // the file list is always in the same place — the toolbar's own Open
+      // button scrolls off screen on a phone.
+      const menu = document.createElement("button");
+      menu.id = "glyph-menu";
+      menu.textContent = "☰";
+      menu.title = "Files";
+      menu.setAttribute("aria-label", "Files");
+      menu.addEventListener("click", toggleDrawer);
+      tabsEl.appendChild(menu);
+    }
     docs.forEach((d) => {
       const t = document.createElement("button");
       t.className = "glyph-tab" + (d.dirty ? " dirty" : "");
@@ -2598,8 +2750,13 @@ window.__glyphInstallChrome = function () {
     btn("open", "Open (" + MODNAME + "O)", doOpen),
     btn("save", "Save (" + MODNAME + "S)", doSave),
     btn("raw", "Raw markdown (" + MODNAME + "E)", toggleRaw),
+    sep(),
+    textSizeButton(-1),
+    textSizeButton(1),
     btn("theme", "Light / dark / system", cycleTheme),
   ].forEach((el) => toolsEl.appendChild(el));
+
+  applyReaderSize();
 
   /* ---------- raw view ---------- */
   function toggleRaw() {
@@ -2638,6 +2795,45 @@ window.__glyphInstallChrome = function () {
   });
 
   /* ---------- theme ---------- */
+  /* ---------- reader text size ---------- */
+  // Reading in bed on a phone is the case this exists for. It scales the
+  // DOCUMENT only: the whole page is sized in em from body's font-size, while
+  // the chrome is in fixed px, so the toolbar and tabs stay put. Remembered
+  // per device, and clamped so the page can never become unusable.
+  const SIZE_MIN = 13, SIZE_MAX = 26;
+  function defaultReaderSize() {
+    return window.matchMedia && window.matchMedia("(max-width: 640px)").matches ? 17 : 15.5;
+  }
+  function storedReaderSize() {
+    const v = parseFloat((() => {
+      try { return localStorage.getItem("glyphReaderSize"); } catch (e) { return null; }
+    })());
+    return isFinite(v) ? Math.min(SIZE_MAX, Math.max(SIZE_MIN, v)) : null;
+  }
+  function applyReaderSize() {
+    const v = storedReaderSize();
+    // Unset means "follow the screen" — the mobile stylesheet's own default.
+    if (v == null) document.body.style.removeProperty("--reader-size");
+    else document.body.style.setProperty("--reader-size", v + "px");
+  }
+  function nudgeReaderSize(step) {
+    const now = storedReaderSize() != null ? storedReaderSize() : defaultReaderSize();
+    const next = Math.min(SIZE_MAX, Math.max(SIZE_MIN, Math.round((now + step) * 2) / 2));
+    try { localStorage.setItem("glyphReaderSize", String(next)); } catch (e) { /* private mode */ }
+    applyReaderSize();
+    flash("Text size " + next + "px");
+  }
+  function textSizeButton(step) {
+    const b = document.createElement("button");
+    b.className = "glyph-btn";
+    b.textContent = step < 0 ? "A−" : "A+";
+    b.style.fontSize = step < 0 ? "11px" : "14px";
+    b.title = step < 0 ? "Smaller text" : "Larger text";
+    b.setAttribute("aria-label", b.title);
+    b.addEventListener("click", () => nudgeReaderSize(step * 1));
+    return b;
+  }
+
   const THEMES = ["system", "light", "dark"];
   let themeIndex = 0;
   function cycleTheme() {

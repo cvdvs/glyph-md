@@ -253,6 +253,47 @@ if (chromeMode) {
       document.getElementById("glyph-newtab").click();
       r.newTabOpens = document.querySelectorAll(".glyph-tab").length === 2;
 
+      // Mobile. The viewport meta is the single most important line for a phone:
+      // without it the page lays out at ~980px and is scaled down, so every
+      // media query below 640px never matches and the interface arrives as a
+      // shrunken desktop. It is one line and easy to drop, so it is asserted.
+      const vp = document.querySelector('meta[name="viewport"]');
+      r.viewportMeta = !!vp && /width=device-width/.test(vp.getAttribute("content") || "");
+      r.viewportFitCover = !!vp && /viewport-fit=cover/.test(vp.getAttribute("content") || "");
+
+      // The fixed bar's height is measured, not guessed: it is 86px on a desktop
+      // and 99px on a phone, and a hardcoded value hides the first lines of the
+      // document under the toolbar on one of them.
+      const barEl = document.getElementById("glyph-bar");
+      const barVar = getComputedStyle(document.documentElement).getPropertyValue("--glyph-bar-h").trim();
+      r.barHeightMeasured = parseFloat(barVar) > 0 &&
+        Math.abs(parseFloat(barVar) - barEl.getBoundingClientRect().height) < 2;
+      r.barIsFixed = getComputedStyle(barEl).position === "fixed";
+      r.bodyPaddingMatchesBar =
+        Math.abs(parseFloat(getComputedStyle(document.body).paddingTop) -
+                 barEl.getBoundingClientRect().height) < 2;
+
+      // The reader text size control scales the DOCUMENT and leaves the chrome
+      // alone, and it clamps so the page cannot be made unusable.
+      const bigger = [...document.querySelectorAll(".glyph-btn")].find((b) => b.title === "Larger text");
+      const smaller = [...document.querySelectorAll(".glyph-btn")].find((b) => b.title === "Smaller text");
+      r.textSizeControls = !!bigger && !!smaller;
+      if (bigger && smaller) {
+        const chromeBefore = getComputedStyle(document.querySelector(".glyph-tab")).fontSize;
+        const before = parseFloat(getComputedStyle(document.body).fontSize);
+        bigger.click(); bigger.click();
+        const after = parseFloat(getComputedStyle(document.body).fontSize);
+        r.textSizeGrows = after > before;
+        r.textSizeLeavesChromeAlone =
+          getComputedStyle(document.querySelector(".glyph-tab")).fontSize === chromeBefore;
+        for (let i = 0; i < 40; i++) bigger.click();
+        r.textSizeClampsHigh = parseFloat(getComputedStyle(document.body).fontSize) <= 26;
+        for (let i = 0; i < 80; i++) smaller.click();
+        r.textSizeClampsLow = parseFloat(getComputedStyle(document.body).fontSize) >= 13;
+        try { localStorage.removeItem("glyphReaderSize"); } catch (e) { /* ignore */ }
+        document.body.style.removeProperty("--reader-size");
+      }
+
       // A .txt is PLAIN TEXT: it opens in the literal view and never reaches the
       // markdown renderer, so it is saved exactly as typed.
       // Newlines come from fromCharCode because a backslash-n ANYWHERE in this
