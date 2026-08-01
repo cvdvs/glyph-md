@@ -2170,7 +2170,15 @@ window.__glyphInstallChrome = function () {
     const m = (location.hash || "").match(/token=([a-f0-9]+)/);
     if (m) {
       try { localStorage.setItem("glyphToken", m[1]); } catch (e) { /* private mode */ }
-      history.replaceState(null, "", location.pathname + location.search);
+      // The token is deliberately LEFT in the address. It used to be stripped
+      // for tidiness, and that quietly broke "Add to Home Screen": iOS gives a
+      // home-screen web app its own storage, separate from Safari, so the
+      // pairing done in Safari does not carry over — and the bookmark it saved
+      // no longer carried the token to pair with, so the app opened straight
+      // onto "Not paired". Keeping it means the shortcut re-pairs on every
+      // launch, which also self-heals when iOS clears storage for a site that
+      // has not been opened in a week. A home-screen app shows no address bar,
+      // so the token is not on display there.
     }
   }
   function glyphToken() {

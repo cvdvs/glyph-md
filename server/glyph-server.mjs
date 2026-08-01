@@ -188,10 +188,28 @@ async function composePage() {
     'window.__initialName = "";\n' +
     "window.__initial = \"\";";
 
+  // Added to the SERVED page only: an app added to the iOS home screen needs an
+  // icon and a display mode, and neither means anything to the desktop builds.
+  // The icon is a separate request rather than a data: URI so it does not add
+  // 47KB of base64 to every build of the app on three platforms.
+  const iosTags = [
+    '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
+    '<link rel="icon" href="/apple-touch-icon.png">',
+    // Opens without Safari's chrome, so it feels like an app rather than a page.
+    '<meta name="apple-mobile-web-app-capable" content="yes">',
+    '<meta name="mobile-web-app-capable" content="yes">',
+    '<meta name="apple-mobile-web-app-title" content="Glyph">',
+    // black-translucent lets the page run under the status bar; the viewport
+    // already carries viewport-fit=cover and the CSS pads for the safe area.
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
+    '<meta name="theme-color" content="#1e1e26">',
+  ].join("\n");
+
   let page = viewer
     .replace("/*__MARKED_JS__*/", () => marked)
     .replace("/*__INITIAL__*/", () => initial)
     .replace("connect-src 'none'", "connect-src 'self'")
+    .replace("<meta charset=\"utf-8\">", '<meta charset="utf-8">\n' + iosTags)
     .replaceAll(' nonce="/*__CSP_NONCE__*/"', "");
 
   const scripts = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
@@ -237,6 +255,18 @@ const server = createServer(async (req, res) => {
     // discloses nothing.
     if (req.method === "GET" && (p === "/" || p === "/index.html")) {
       return send(res, 200, PAGE, { "Content-Type": "text/html; charset=utf-8" });
+    }
+
+    if (req.method === "GET" && (p === "/apple-touch-icon.png" || p === "/favicon.ico")) {
+      try {
+        const icon = await readFile(path.join(REPO, "assets", "apple-touch-icon.png"));
+        return send(res, 200, icon, {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=86400",
+        });
+      } catch {
+        return send(res, 404, "", { "Content-Type": "text/plain" });
+      }
     }
 
     // Everything under /api needs the token.
