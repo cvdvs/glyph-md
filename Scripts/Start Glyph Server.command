@@ -29,8 +29,22 @@ if [[ ! -d "$FOLDER" ]]; then
   exit 1
 fi
 
-# Stop an older copy so the port is free and there is only ever one.
-pkill -f "glyph-server.mjs" 2>/dev/null
-sleep 0.4
+# If one is already running, leave it alone. Killing it would take down whatever
+# Terminal window is hosting it and leave a dead "[Process completed]" window
+# behind, which is confusing and looks like a crash. To restart, close the window
+# that is running it — closing that window IS how you stop the server.
+if pgrep -f "glyph-server.mjs" >/dev/null 2>&1; then
+  print -r -- "  It is already running — in another Terminal window."
+  print -r -- ""
+  print -r -- "  Look for a window titled 'Start Glyph Server.command'. The link is"
+  print -r -- "  printed there. To restart, close that window first, then run this again."
+  print -r -- ""
+  read -k1 "?  Press any key to close this window."
+  exit 0
+fi
+
+print -r -- "  Keep this window open — closing it stops the server."
+print -r -- "  (You can minimise it.)"
+print -r -- ""
 
 exec ./Scripts/glyph-server-launcher.sh "$FOLDER"
