@@ -521,6 +521,17 @@
     border-bottom: 1px solid var(--border);
     user-select: none;
     -webkit-user-select: none;
+    /* Added to the home screen, the page runs UNDER the iOS status bar (the
+       status-bar style is black-translucent, and the viewport is
+       viewport-fit=cover). Without this the tab strip sits beneath the clock and
+       the battery, and the menu button cannot be tapped at all. The inset is 0
+       in a normal browser window and on every desktop, so this costs nothing
+       there — and syncBarHeight measures the padded height, so the document is
+       still offset by exactly the right amount. */
+    padding-top: env(safe-area-inset-top, 0px);
+    /* A notch leaves the corners unusable in landscape. */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
   }
   #glyph-tabs {
     display: flex;
@@ -719,11 +730,16 @@
     /* Scale the READER, not #md directly: a fixed font-size here would win over
        the A-/A+ control and make it do nothing on the one screen it matters on. */
     body.glyph-chrome { --reader-size: 17px; }
-    body.glyph-chrome .glyph-btn { min-width: 40px; height: 40px; }
-    body.glyph-chrome #glyph-tools { height: 56px; gap: 2px; }
-    body.glyph-chrome #glyph-tabs { height: 42px; }
-    body.glyph-chrome .glyph-tab { font-size: 13.5px; padding: 0 10px 0 13px; max-width: 46vw; }
-    body.glyph-chrome .glyph-tab .x { width: 22px; height: 22px; line-height: 21px; font-size: 15px; }
+    /* Apple's minimum comfortable touch target is 44pt; these are sized to it
+       rather than to what looks tidy on a desktop. */
+    body.glyph-chrome .glyph-btn { min-width: 44px; height: 44px; }
+    body.glyph-chrome .glyph-btn svg { width: 19px; height: 19px; }
+    body.glyph-chrome #glyph-tools { height: 60px; gap: 2px; padding: 0 6px; }
+    body.glyph-chrome #glyph-tabs { height: 46px; }
+    body.glyph-chrome .glyph-tab { font-size: 14.5px; padding: 0 12px 0 15px; max-width: 52vw; }
+    body.glyph-chrome .glyph-tab .x { width: 26px; height: 26px; line-height: 25px; font-size: 17px; }
+    body.glyph-chrome #glyph-newtab { font-size: 21px; width: 44px; }
+    body.glyph-chrome #glyph-menu { width: 50px; font-size: 18px; }
     body.glyph-chrome #glyph-drawer { width: 88vw; max-width: 88vw; }
     body.glyph-chrome .glyph-tree-row { padding: 11px 8px; font-size: 15px; }
     body.glyph-chrome #glyph-status { bottom: max(10px, env(safe-area-inset-bottom)); }

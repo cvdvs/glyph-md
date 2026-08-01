@@ -312,6 +312,35 @@ if (chromeMode) {
       r.txtStaysRaw = document.body.classList.contains("glyph-raw");
       r.txtTabOpened = plainDoc >= 2;
 
+      // Added to an iOS home screen the page runs UNDER the status bar, so the
+      // fixed bar must pad for the safe-area inset or the tab strip sits beneath
+      // the clock and the menu button cannot be tapped at all. env() cannot be
+      // emulated here, so the inset is applied directly and the same invariants
+      // are checked: the strip clears it, the button is the topmost element at
+      // its own centre, and the measured bar height still matches the padding.
+      {
+        const bar = document.getElementById("glyph-bar");
+        const declared = getComputedStyle(bar).paddingTop;
+        r.barPadsForSafeArea = declared !== "" && declared != null;
+        bar.style.paddingTop = "59px";
+        window.dispatchEvent(new Event("resize"));
+        const tabs = document.getElementById("glyph-tabs");
+        r.tabsClearTheStatusBar = tabs.getBoundingClientRect().top >= 59;
+        const menu = document.getElementById("glyph-menu");
+        if (menu) {
+          const mr = menu.getBoundingClientRect();
+          const hit = document.elementFromPoint(mr.left + mr.width / 2, mr.top + mr.height / 2);
+          r.menuTappableUnderNotch = !!hit && (hit === menu || menu.contains(hit));
+        } else {
+          r.menuTappableUnderNotch = true;   // no server mode, no menu button
+        }
+        r.barHeightTracksInset =
+          Math.abs(parseFloat(getComputedStyle(document.documentElement)
+            .getPropertyValue("--glyph-bar-h")) - bar.getBoundingClientRect().height) < 2;
+        bar.style.paddingTop = "";
+        window.dispatchEvent(new Event("resize"));
+      }
+
       // A document too large to render live must fall back to the raw view
       // instead of freezing the window parsing it (the portable shell has no
       // native editor to fall back to, as the macOS app does).
