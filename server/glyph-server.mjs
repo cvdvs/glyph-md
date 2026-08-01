@@ -362,32 +362,54 @@ server.listen(port, "0.0.0.0", () => {
   const host = hostname().replace(/\.local$/, "");
   const addrs = lanAddresses();
   const primary = addrs[0] || "127.0.0.1";
-  const link = `http://${primary}:${port}/#token=${TOKEN}`;
+  const ts = tailscaleHost();
+
+  // The token is a password. It is printed ONLY to an interactive terminal —
+  // when stdout is redirected to a log file the URLs are printed without it,
+  // because a log is world-readable far more often than anyone expects (the
+  // first one this wrote lived in /tmp at mode 0644, with the token in it three
+  // times over). The token is always available from the file below, which is
+  // 0600, so nothing is lost by leaving it out of the log.
+  const tty = process.stdout.isTTY;
+  const tokenFile = path.join(homedir(), ".config", "glyph", "server-token");
+  const withToken = (base) => tty ? `${base}/#token=${TOKEN}` : `${base}/`;
+
   console.log("");
   console.log("  Glyph server is running.");
   console.log(`  Serving:  ${ROOT}`);
   console.log("");
-  console.log("  On your phone (same wifi), open this ONCE — it remembers the token:");
+  if (tty) {
+    console.log("  On your phone (same wifi), open this ONCE — it remembers the token:");
+  } else {
+    console.log("  On your phone (same wifi):");
+  }
   console.log("");
-  console.log(`      ${link}`);
+  console.log(`      ${withToken(`http://${primary}:${port}`)}`);
   console.log("");
-  console.log(`  Or by name:  http://${host}.local:${port}/#token=${TOKEN}`);
+  console.log(`  Or by name:  ${withToken(`http://${host}.local:${port}`)}`);
   if (addrs.length > 1) {
     console.log(`  Other addresses: ${addrs.slice(1).join(", ")}`);
   }
-  const ts = tailscaleHost();
   if (ts) {
     console.log("");
-    console.log("  ANYWHERE (on a walk, on cellular) - via your private Tailscale network:");
+    console.log("  ANYWHERE (on a walk, on cellular) — via your private Tailscale network:");
     console.log("");
-    console.log(`      http://${ts}:${port}/#token=${TOKEN}`);
+    console.log(`      ${withToken(`http://${ts}:${port}`)}`);
     console.log("");
     console.log("  That address only works from your own signed-in devices, and the");
     console.log("  traffic is encrypted between them by Tailscale.");
+    console.log("");
+    console.log("  NOTE: the phone remembers the token per ADDRESS. Pairing on the wifi");
+    console.log("  link does not pair this one — open this link once too.");
   } else {
     console.log("");
     console.log("  For access away from home, install Tailscale on this Mac and your");
-    console.log("  phone and sign in to the same account - the link appears here.");
+    console.log("  phone and sign in to the same account — the link appears here.");
+  }
+  if (!tty) {
+    console.log("");
+    console.log("  The pairing token is NOT printed to a log file. Add it to a link as");
+    console.log(`  #token=…  — read it from ${tokenFile}`);
   }
   console.log("");
   console.log("  Do NOT port-forward this to the internet, and do not enable Tailscale");

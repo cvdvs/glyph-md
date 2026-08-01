@@ -11,7 +11,7 @@
 // every "blocked" case here is a file that must stay untouched.
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,19 +42,27 @@ let out = "";
 srv.stdout.on("data", (d) => { out += d.toString(); });
 srv.stderr.on("data", (d) => { out += d.toString(); });
 
-// Wait for the banner, which carries the token.
+// Wait for the banner, then read the token from its file. The banner prints the
+// token ONLY to an interactive terminal — stdout here is a pipe, and a log file
+// is world-readable far more often than anyone expects — so the file (mode 0600)
+// is the supported way to obtain it.
 let token = null;
 for (let i = 0; i < 100 && !token; i++) {
   await sleep(100);
-  const m = out.match(/token=([a-f0-9]+)/);
-  if (m) token = m[1];
+  if (!/Glyph server is running/.test(out)) continue;
+  try {
+    token = (await readFile(path.join(homedir(), ".config", "glyph", "server-token"), "utf8")).trim();
+  } catch { /* not written yet */ }
 }
+// The token must NOT appear in non-interactive output.
+const tokenLeaked = !!token && out.includes(token);
 
 const base = `http://127.0.0.1:${PORT}`;
 const auth = (extra = {}) => ({ Authorization: "Bearer " + token, ...extra });
 
 async function main() {
-  ok("server started and printed a token", !!token);
+  ok("server started and the token is readable from its file", !!token);
+  ok("the token is NOT printed to non-interactive output (a log would leak it)", !tokenLeaked);
   if (!token) return;
 
   // Auth.

@@ -89,8 +89,8 @@ So the server starts with the machine and restarts if it ever stops, create
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/glyph-server.log</string>
-  <key>StandardErrorPath</key><string>/tmp/glyph-server.log</string>
+  <key>StandardOutPath</key><string>/Users/YOU/Library/Logs/glyph-server.log</string>
+  <key>StandardErrorPath</key><string>/Users/YOU/Library/Logs/glyph-server.log</string>
 </dict>
 </plist>
 ```
@@ -102,5 +102,6 @@ Find your `node` path with `which node` and put it in place of
 launchctl load ~/Library/LaunchAgents/com.glyph.server.plist
 ```
 
-The token is in the log (`/tmp/glyph-server.log`) or, unchanged, in
-`~/.config/glyph/server-token`. To stop it: `launchctl unload …` the same file.
+The token is never written to a log — logs end up world-readable more often
+than anyone expects. Read it from `~/.config/glyph/server-token`, which is
+readable only by you. To stop it: `launchctl unload …` the same file.

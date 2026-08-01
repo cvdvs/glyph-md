@@ -2513,6 +2513,18 @@ window.__glyphInstallChrome = function () {
       d.serverPath = rel;
       d.mtime = data.mtime;
       d.dirty = false;
+
+      // An edit that never reached the Mac — the phone lost signal, or iOS
+      // discarded the tab — is offered back rather than silently replaced by
+      // the older copy from disk.
+      const stash = readDrafts()[rel];
+      if (stash && typeof stash.text === "string" && stash.text !== data.text) {
+        d.text = stash.text;
+        d.dirty = true;
+        d.pendingSave = true;
+        if (d.plain) rawArea.value = d.text; else window.renderMarkdown(d.text);
+        holdStatus("Restored an edit that never saved — press Save to send it");
+      }
       paintTabs();
       closeDrawer();
     } catch (e) {
@@ -2540,39 +2552,96 @@ window.__glyphInstallChrome = function () {
   function scheduleServerRetry(d) {
     // A failed save (offline) is retried unconditionally — the point is that the
     // text never persisted, so it must resend even if nothing new was typed.
+    // Backs off to 30s: on a walk the phone can be out of signal for minutes,
+    // and hammering a dead link every 4 seconds only costs battery.
     if (!d || d.retryTimer) return;
-    d.retryTimer = setTimeout(() => { d.retryTimer = null; if (d.pendingSave) flushServerSave(d); }, 4000);
+    d.retryDelay = Math.min(30000, (d.retryDelay || 2000) * 2);
+    d.retryTimer = setTimeout(() => {
+      d.retryTimer = null;
+      if (d.pendingSave) flushServerSave(d);
+    }, d.retryDelay);
   }
+
+  // An unsaved edit kept ONLY in a JavaScript variable is an edit iOS can throw
+  // away: a backgrounded tab is discarded without warning and comes back blank,
+  // and beforeunload does nothing on a phone. So every pending edit is also
+  // written to localStorage, and offered back on the next load. This is the one
+  // thing standing between a dead zone and losing what she wrote on a walk.
+  const DRAFT_KEY = "glyphDrafts";
+  function readDrafts() {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); }
+    catch (e) { return {}; }
+  }
+  function writeDrafts(all) {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(all)); }
+    catch (e) { /* private mode, or quota: the in-memory copy is still live */ }
+  }
+  function stashDraft(d) {
+    if (!d || !d.serverPath) return;
+    const all = readDrafts();
+    all[d.serverPath] = { text: d.text, mtime: d.mtime || 0, at: Date.now() };
+    writeDrafts(all);
+  }
+  function clearDraft(d) {
+    if (!d || !d.serverPath) return;
+    const all = readDrafts();
+    if (all[d.serverPath]) { delete all[d.serverPath]; writeDrafts(all); }
+  }
+
   async function flushServerSave(d) {
     if (!d || !d.serverPath || !d.pendingSave || d.saving) return;
     d.saving = true;
     const sent = d.text;
     const force = !!d.forceNext;
+    stashDraft(d);            // survive a tab discard from here until it lands
     try {
       const body = { path: d.serverPath, text: sent };
       // A normal save (and the FIRST explicit Save) sends baseMtime so the server
       // refuses to clobber a version edited on the computer meanwhile. Only a
       // save the user repeats AFTER seeing the conflict warning forces past it.
       if (!force && typeof d.mtime === "number") body.baseMtime = d.mtime;
-      const res = await glyphApi("/api/file", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // A stalled cellular link otherwise hangs with no message at all while
+      // d.saving blocks every retry. Ten seconds, then treat it as offline.
+      const ctl = typeof AbortController === "function" ? new AbortController() : null;
+      const bell = ctl ? setTimeout(() => ctl.abort(), 10000) : null;
+      let res;
+      try {
+        res = await glyphApi("/api/file", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: ctl ? ctl.signal : undefined,
+        });
+      } finally {
+        if (bell) clearTimeout(bell);
+      }
       if (res.status === 409) {
         d.conflict = true;                 // pendingSave stays set; next Save forces
-        paintStatus("Changed on the computer — Save again to overwrite, or reopen to load it");
+        holdStatus("Changed on the computer — Save again to overwrite, or reopen to load it");
+        return;                            // do NOT auto-retry: it would just 409 forever
+      }
+      if (res.status === 401) {
+        // Retrying cannot help: this phone is no longer paired. Say so instead
+        // of promising a retry that will never succeed.
+        holdStatus("Not paired any more — open the link from the Mac again");
         return;
       }
-      if (!res.ok) { paintStatus("Save failed — will retry"); scheduleServerRetry(d); return; }
+      if (!res.ok) { holdStatus("Save failed — will retry"); scheduleServerRetry(d); return; }
       const info = await res.json();
       d.mtime = info.mtime;
       d.conflict = false;
       d.forceNext = false;
-      if (d.text === sent) { d.pendingSave = false; d.dirty = false; paintTabs(); }
+      d.retryDelay = 0;
+      if (d.text === sent) {
+        d.pendingSave = false;
+        d.dirty = false;
+        clearDraft(d);        // it is on the Mac now; the local copy is redundant
+        paintTabs();
+      }
+      releaseStatus();
       paintStatus("Saved");
     } catch (e) {
-      paintStatus("Offline — will save when reconnected");
+      holdStatus("Offline — your edit is kept, and saves when you reconnect");
       scheduleServerRetry(d);
     } finally {
       d.saving = false;
@@ -2588,6 +2657,27 @@ window.__glyphInstallChrome = function () {
     // When the wifi comes back, flush every note that still has an edit waiting.
     window.addEventListener("online", () => {
       docs.forEach((d) => { if (d.serverPath && d.pendingSave) scheduleServerSave(d, { immediate: true }); });
+    });
+
+    // visibilitychange is the ONLY hook that fires reliably on a phone:
+    // beforeunload does nothing on iOS, and a backgrounded tab can be discarded
+    // without any further warning. Going away: snapshot every pending edit so a
+    // discard cannot lose it. Coming back: try again, because a timer inside a
+    // hidden tab is throttled or stopped, so the retry that "should" have run
+    // while she walked did not, and navigator.onLine usually never changed
+    // either — losing cellular signal does not fire an offline/online event.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") {
+        captureActive();
+        docs.forEach((d) => { if (d.serverPath && d.pendingSave) stashDraft(d); });
+      } else {
+        docs.forEach((d) => {
+          if (d.serverPath && d.pendingSave) {
+            d.retryDelay = 0;                       // she is back; try at once
+            scheduleServerSave(d, { immediate: true });
+          }
+        });
+      }
     });
   }
 
@@ -2851,16 +2941,25 @@ window.__glyphInstallChrome = function () {
 
   /* ---------- status ---------- */
   let flashTimer = null;
+  // A warning about unsaved work STICKS until the work is saved. Without this
+  // every keystroke calls paintStatus() with no argument and replaces the
+  // warning with the word count — so "Offline" or "Changed on the computer"
+  // vanished the moment she carried on typing, which is exactly when she most
+  // needed to see it.
+  let stickyStatus = null;
   function paintStatus(msg) {
     if (msg) {
       status.textContent = msg;
       return;
     }
+    if (stickyStatus) { status.textContent = stickyStatus; return; }
     const d = active();
     const text = d ? d.text : "";
     const words = (text.match(/\S+/g) || []).length;
     status.textContent = words.toLocaleString() + " words";
   }
+  function holdStatus(msg) { stickyStatus = msg; status.textContent = msg; }
+  function releaseStatus() { stickyStatus = null; paintStatus(); }
   function flash(msg) {
     paintStatus(msg);
     clearTimeout(flashTimer);
