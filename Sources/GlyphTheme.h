@@ -15,6 +15,10 @@ NSColor *GlyphFG(void);          // --fg      default text
 NSColor *GlyphMuted(void);       // --muted   renders, but quietly
 NSColor *GlyphFaint(void);       // --faint   punctuation that vanishes when rendered
 NSColor *GlyphAccent(void);      // --accent  caret, checked box, frontmatter values
+// The raw editor's line numbers. Its own name so the legibility guard in
+// Scripts/highlight-smoke.m tests the colour the gutter really draws, rather
+// than a constant it was told about.
+NSColor *GlyphGutterNumber(void);
 NSColor *GlyphCodeBG(void);      // --code-bg inline code chip
 
 // Content colors, matching the formatted view exactly

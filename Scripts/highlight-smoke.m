@@ -191,6 +191,34 @@ int main(int argc, const char *argv[]) {
             }
         }
 
+        // --- the gutter's numbers have to be READABLE ---
+        // They were drawn in GlyphFaint, which is 2.86:1 against the dark page —
+        // under the 3:1 floor for UI text. Every number except the caret line was
+        // invisible, so a wrapped paragraph looked like it had no number at all
+        // and the file looked like it was numbered only on line 1.
+        {
+            CGFloat (^lin)(CGFloat) = ^CGFloat(CGFloat c) {
+                return (c <= 0.03928) ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+            };
+            CGFloat (^luminance)(NSColor *) = ^CGFloat(NSColor *col) {
+                NSColor *c = [col colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+                return 0.2126 * lin(c.redComponent) + 0.7152 * lin(c.greenComponent)
+                     + 0.0722 * lin(c.blueComponent);
+            };
+            for (NSString *name in @[@"dark", @"light"]) {
+                NSAppearance *ap = [NSAppearance appearanceNamed:
+                    [name isEqualToString:@"dark"] ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
+                __block CGFloat ratio = 0;
+                [ap performAsCurrentDrawingAppearance:^{
+                    CGFloat a = luminance(GlyphGutterNumber()), b = luminance(GlyphBG());
+                    ratio = (MAX(a, b) + 0.05) / (MIN(a, b) + 0.05);
+                }];
+                Expect([NSString stringWithFormat:
+                        @"gutter numbers are legible in %@ (%.2f:1, need 3)", name, ratio].UTF8String,
+                       ratio >= 3.0);
+            }
+        }
+
         // --- paragraph style survives token attribution (setAttributes would drop it) ---
         {
             NSRange r = RangeOf(@"**bold words**");

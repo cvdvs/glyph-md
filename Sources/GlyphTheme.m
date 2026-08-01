@@ -18,6 +18,9 @@ NSColor *GlyphFG(void)      { static NSColor *c; if (!c) c = Dyn(0x26272b, 0xd8d
 NSColor *GlyphMuted(void)   { static NSColor *c; if (!c) c = Dyn(0x75797f, 0x9094a0); return c; }
 NSColor *GlyphFaint(void)   { static NSColor *c; if (!c) c = Dyn(0xa9adb3, 0x5f6370); return c; }
 NSColor *GlyphAccent(void)  { static NSColor *c; if (!c) c = Dyn(0x6944ff, 0x9c8bff); return c; }
+// Line numbers. Muted rather than faint: faint measures 2.86:1 on the dark page,
+// under the 3:1 floor for UI text, and the numbers were effectively invisible.
+NSColor *GlyphGutterNumber(void) { return GlyphMuted(); }
 NSColor *GlyphCodeBG(void)  { static NSColor *c; if (!c) c = Dyn(0xf4f4f7, 0x2a2a34); return c; }
 NSColor *GlyphH1(void)      { static NSColor *c; if (!c) c = Dyn(0xd23b71, 0xef5d8d); return c; }
 NSColor *GlyphH2(void)      { static NSColor *c; if (!c) c = Dyn(0xae761b, 0xe5ad4c); return c; }

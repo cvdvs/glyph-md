@@ -46,9 +46,13 @@ static const CGFloat kPadRight = 12;   // gap between the digits and the text
     BOOL spanSelected = sel.length > 0;
     BOOL focused = (tv.window.firstResponder == tv);
 
+    // GlyphGutterNumber, not faint: faint measured 2.86:1 against the dark page,
+    // below the 3:1 floor for UI text, and every number except the caret line
+    // was invisible — a wrapped paragraph looked unnumbered, so the file read as
+    // though only line 1 had a number. Scripts/highlight-smoke.m guards it.
     NSDictionary *plain = @{
         NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular],
-        NSForegroundColorAttributeName: GlyphFaint(),
+        NSForegroundColorAttributeName: GlyphGutterNumber(),
     };
     NSDictionary *current = @{
         NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightMedium],
