@@ -240,6 +240,9 @@ if (chromeMode) {
       r.toolButtons = document.querySelectorAll(".glyph-btn").length;
       r.status = !!document.getElementById("glyph-status");
       r.rawArea = !!document.getElementById("glyph-raw");
+      // The phone's only way to copy a note — it has no keyboard to press
+      // ⇧⌘C with, so the button is not a convenience there.
+      r.copyButton = !!document.querySelector('[title^="Copy the whole note"]');
       r.getText = typeof window.glyphGetText === "function"
         && window.glyphGetText().length > 0;
       const rawBtn = document.querySelector('[title^="Raw markdown"]');
@@ -311,6 +314,12 @@ if (chromeMode) {
       if (rawBtn2) rawBtn2.click();
       r.txtStaysRaw = document.body.classList.contains("glyph-raw");
       r.txtTabOpened = plainDoc >= 2;
+      // Copying a plain text file must give THAT file. A .txt never re-renders
+      // the article, so #md, curPrefix and lastSerialized still hold the
+      // markdown document that was open before it — a copy that reached for
+      // the serializer here would hand over a different note's contents
+      // entirely. It has to come from the literal view, byte for byte (rule 40).
+      r.txtCopyIsTheTxt = window.glyphCopyText("all") === plainSrc;
 
       // Added to an iOS home screen the page runs UNDER the status bar, so the
       // fixed bar must pad for the safe-area inset or the tab strip sits beneath
@@ -341,6 +350,14 @@ if (chromeMode) {
         window.dispatchEvent(new Event("resize"));
       }
 
+      // The toolbar is wider than a phone and scrolls sideways. It used to be
+      // justify-content:center, which spills a too-wide flex row off BOTH
+      // edges — and the left spill can never be scrolled back to, because
+      // scrollLeft has no negative side. (No backticks in this block: it lives
+      // inside a template literal.) Measured on a 390px phone: the row was
+      // 874px wide with Undo at left -477 and scrollLeft already 0, so the
+      // first buttons were unreachable. Every button must be reachable by
+      // scrolling, and the FIRST one must already be on screen at rest.
       // A document too large to render live must fall back to the raw view
       // instead of freezing the window parsing it (the portable shell has no
       // native editor to fall back to, as the macOS app does).
@@ -354,6 +371,43 @@ if (chromeMode) {
     returnByValue: true,
   });
   Object.assign(out, JSON.parse(cr.value));
+
+  // The toolbar is wider than a phone and scrolls sideways. It used to be
+  // justify-content:center, which spills a too-wide flex row off BOTH edges —
+  // and the left spill can never be scrolled back to, because scrollLeft has no
+  // negative side. Measured on a 390px phone: the row was 874px wide with Undo
+  // at left -477 and scrollLeft already 0, so the first buttons in the toolbar
+  // were unreachable on the one device that most needs them.
+  //
+  // This has to run under REAL phone metrics. The window here is 1000px and the
+  // row is about 1006px, so at that size the row barely overflows and the check
+  // passes even with the bug deliberately put back — verified, twice, including
+  // a version that pinned the toolbar's width by hand and still proved nothing.
+  await S("Emulation.setDeviceMetricsOverride",
+          { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+  await sleep(300);
+  const { result: tb } = await S("Runtime.evaluate", {
+    expression: `(function(){
+      const r = {};
+      const tools = document.getElementById("glyph-tools");
+      const btns = [...document.querySelectorAll(".glyph-btn")];
+      if (!tools || !btns.length) return JSON.stringify(r);
+      tools.scrollLeft = 0;
+      const bar0 = tools.getBoundingClientRect();
+      r.toolbarActuallyOverflows = tools.scrollWidth > tools.clientWidth + 1;
+      r.toolbarStartsAtItsStart = btns[0].getBoundingClientRect().left >= bar0.left - 1;
+      r.noToolButtonUnreachable = btns.every(
+        (b) => b.getBoundingClientRect().left - bar0.left >= -1);
+      tools.scrollLeft = tools.scrollWidth;
+      r.lastToolButtonReachable =
+        btns[btns.length - 1].getBoundingClientRect().right <= bar0.right + 1;
+      tools.scrollLeft = 0;
+      return JSON.stringify(r);
+    })()`,
+    returnByValue: true,
+  });
+  Object.assign(out, JSON.parse(tb.value));
+  await S("Emulation.clearDeviceMetricsOverride");
 }
 const serialized = out.serialized;
 delete out.serialized;

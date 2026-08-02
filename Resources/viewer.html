@@ -581,7 +581,18 @@
   #glyph-tools {
     display: flex;
     align-items: center;
-    justify-content: center;
+    /* NOT a plain "center". A centred flex row that overflows its container
+       spills off BOTH edges, and the left spill can never be scrolled back to,
+       because scrollLeft has no negative side. Measured on a 390px phone: the
+       row was 1357px wide and Undo sat at left -477 with scrollLeft already at
+       0 — so the first buttons in the toolbar were permanently unreachable on
+       the one device that most needs them.
+       "safe center" is the same centring with the overflow case defined to fall
+       back to the start edge. The plain flex-start above it is the fallback for
+       an engine that does not know the keyword: left-aligned rather than
+       centred, but whole. Both Blink and WebKit do know it (checked). */
+    justify-content: flex-start;
+    justify-content: safe center;
     gap: 3px;
     height: 47px;
     padding: 0 10px;
@@ -1524,8 +1535,11 @@ function serializeBlock(el) {
   }
 }
 
-function serializeDoc() {
-  const md = document.getElementById("md");
+// `root` lets the same block loop run over a detached fragment instead of the
+// live document — the copy commands hand it a clone of the user's selection.
+// Nothing else passes it, so the document path is byte-for-byte unchanged.
+function serializeDoc(root) {
+  const md = root || document.getElementById("md");
   if (!md) return lastSerialized;
   const parts = [];
   md.childNodes.forEach((el) => {
@@ -2097,6 +2111,176 @@ window.glyphGetText = function () {
   return curPrefix + serializeDoc();
 };
 
+/* ---------- select all, and copy as markdown ----------
+   Both live here rather than in the chrome layer because macOS needs them too,
+   and because the page is the only place that can do either correctly.
+
+   Select All had to move in here: WebKit's own selectAll: selects NOTHING while
+   the page's activeElement is BODY, which is exactly the state the Mac app is
+   left in — -applyMode makes the web view first responder, and that does not
+   focus anything inside the page. Measured in a real WKWebView on sample.md:
+   0 characters selected with BODY focused, 1327 with the article focused. So
+   the menu item looked broken and was. Focusing the article and setting the
+   Range here is deterministic, and it is also the only path the phone and the
+   Windows/Linux shell have, since neither has a native Edit menu.
+
+   Copy has to produce MARKDOWN. The rendered text is what the system clipboard
+   would take, and it arrives with every heading, list marker and emphasis
+   flattened away — useless for pasting a draft anywhere else. */
+
+const COPY_BLOCK_TAGS = /^(H[1-6]|P|DIV|UL|OL|BLOCKQUOTE|PRE|TABLE|HR)$/;
+
+// The in-page raw view, but only while it is the one on screen. macOS has no
+// such element — its raw view is a native NSTextView — so this is null there
+// and every path below falls through to the formatted view, which is correct.
+function visibleRawArea() {
+  const t = document.getElementById("glyph-raw");
+  return t && document.body.classList.contains("glyph-raw") ? t : null;
+}
+
+window.glyphSelectAll = function () {
+  const raw = visibleRawArea();
+  if (raw) { raw.focus(); raw.select(); return raw.value.length; }
+  const md = document.getElementById("md");
+  if (!md) return 0;
+  // preventScroll: selecting must not also jump the reader to the top.
+  md.focus({ preventScroll: true });
+  const r = document.createRange();
+  r.selectNodeContents(md);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  return sel.toString().length;
+};
+
+// A selection that starts mid-paragraph clones bare text and inline elements.
+// serializeBlock has no case for those and falls through to `outerHTML`, which
+// would put raw <strong> markup on the clipboard (rule 14) — so a run of inline
+// nodes is wrapped in a paragraph before the block loop ever sees it.
+function groupInlineRuns(host) {
+  let run = null;
+  Array.prototype.slice.call(host.childNodes).forEach((n) => {
+    const isBlock = n.nodeType === Node.ELEMENT_NODE &&
+      (COPY_BLOCK_TAGS.test(n.tagName) ||
+       (n.classList && (n.classList.contains("callout") || n.classList.contains("props"))));
+    if (isBlock) { run = null; return; }
+    // Whitespace between two blocks is layout, not content.
+    if (n.nodeType === Node.TEXT_NODE && !n.nodeValue.trim() && !run) {
+      host.removeChild(n);
+      return;
+    }
+    if (!run) {
+      run = document.createElement("p");
+      host.insertBefore(run, n);
+    }
+    run.appendChild(n);
+  });
+}
+
+function selectionMarkdown() {
+  const sel = getSelection();
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+  const md = document.getElementById("md");
+  if (!md) return null;
+  const range = sel.getRangeAt(0);
+  // Only what is inside the note counts — a stray selection in the toolbar or
+  // the file drawer is not something anyone meant to copy.
+  const anchor = range.commonAncestorContainer;
+  if (anchor !== md && !md.contains(anchor)) return null;
+  const host = document.createElement("div");
+  host.appendChild(range.cloneContents());
+  rewrapToDocumentShape(host, range, md);
+  groupInlineRuns(host);
+  const out = serializeDoc(host).replace(/\n+$/, "");
+  return out.trim() ? out : null;
+}
+
+// cloneContents() returns the CONTENTS of a range, never the element they sat
+// in — so a selection made inside a list arrives as bare <li> nodes and one
+// inside a table as bare <tr>. serializeBlock has a case for neither, and the
+// markers, the checkboxes and the whole table shape are silently lost.
+// Measured before this: two bullets came back as "alpha\nbeta", two checklist
+// items as " one\n two", and two table rows as "\n1\n2\n\n\n3\n4".
+//
+// Re-wrapping in a SHALLOW clone of each ancestor up to the article puts the
+// fragment into the same shape the serializer sees in a whole document, so a
+// list serializes as a list and a quote keeps its "> ". The clone is shallow
+// and keeps attributes, which is what carries an <ol start> or a callout's
+// data-raw-type. When the selection already spans whole blocks the common
+// ancestor IS the article and nothing is wrapped.
+function rewrapToDocumentShape(host, range, md) {
+  let node = range.commonAncestorContainer;
+  if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
+  const chain = [];
+  while (node && node !== md && md.contains(node)) {
+    chain.push(node);
+    node = node.parentElement;
+  }
+  // Innermost first, so each wrap lands inside the next one out.
+  chain.forEach((ancestor) => {
+    const shell = ancestor.cloneNode(false);
+    while (host.firstChild) shell.appendChild(host.firstChild);
+    host.appendChild(shell);
+  });
+}
+
+// "all" is the whole note, frontmatter included. "selection" falls back to the
+// whole note when nothing is selected, so one shortcut covers both of the
+// things a reader actually wants.
+window.glyphCopyText = function (scope) {
+  const raw = visibleRawArea();
+  if (raw) {
+    if (scope === "selection" && raw.selectionEnd > raw.selectionStart) {
+      return raw.value.slice(raw.selectionStart, raw.selectionEnd);
+    }
+    return raw.value;
+  }
+  if (scope === "selection") {
+    const s = selectionMarkdown();
+    if (s) return s;
+  }
+  return window.glyphGetText();
+};
+
+// macOS writes the pasteboard natively; every other surface has to do it here.
+// navigator.clipboard is gated on a SECURE CONTEXT and the phone server is plain
+// http on a LAN address, so it simply does not exist there — measured against a
+// running server on a 192.168.x.x address: isSecureContext false,
+// navigator.clipboard undefined, document.execCommand("copy") supported (and the
+// same holds for a Tailscale http:// address). The fallback therefore is
+// not a nicety, it is the only path the phone has, and it must run inside the
+// click that asked for it, so nothing is awaited before reaching it.
+window.glyphCopyToClipboard = function (text) {
+  const legacy = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    // Off-screen, but not display:none and not zero-opacity-only — iOS refuses
+    // to copy from a node it considers invisible, and refuses to focus one
+    // outside the viewport.
+    ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;" +
+                       "padding:0;border:0;outline:0;opacity:0;font-size:16px";
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    const prev = getSelection().rangeCount ? getSelection().getRangeAt(0) : null;
+    ta.focus();
+    ta.setSelectionRange(0, ta.value.length);
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    // Put the reader's own selection back — copying should not lose it.
+    if (prev) {
+      const s = getSelection();
+      s.removeAllRanges();
+      s.addRange(prev);
+    }
+    return ok;
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(() => true, () => legacy());
+  }
+  return Promise.resolve(legacy());
+};
+
 /* ================= optional chrome =================
    Tabs, toolbar, open/save, word count, theme and a raw view — everything the
    macOS app gets from AppKit. Runs ONLY when window.__glyphChrome is set, so on
@@ -2128,6 +2312,7 @@ window.__glyphInstallChrome = function () {
     open: svg('<path d="M4 20h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7L11 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/>'),
     save: svg('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
     raw: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
+    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
     theme: svg('<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/>'),
   };
 
@@ -2839,6 +3024,12 @@ window.__glyphInstallChrome = function () {
     btn("undo", "Undo (" + MODNAME + "Z)", T("undo")),
     btn("redo", "Redo (⇧" + MODNAME + "Z)", T("redo")),
     sep(),
+    // Third from the left on purpose. The toolbar scrolls sideways on a phone,
+    // and the phone is the one surface with no keyboard to press ⇧⌘C with — put
+    // this with Open and Save and it sits twenty icons off the edge of the
+    // screen, which is the same as not shipping it.
+    btn("copy", "Copy the whole note as markdown (⇧" + MODNAME + "C)", () => doCopy("all")),
+    sep(),
     textBtn("H1", "Heading 1 (" + MODNAME + "1)", T("h1")),
     textBtn("H2", "Heading 2 (" + MODNAME + "2)", T("h2")),
     textBtn("H3", "Heading 3 (" + MODNAME + "3)", T("h3")),
@@ -2873,6 +3064,22 @@ window.__glyphInstallChrome = function () {
   applyReaderSize();
 
   /* ---------- raw view ---------- */
+  // The toolbar button always copies the WHOLE note, because that is what a
+  // button with no selection behind it should predictably do. ⇧⌘C copies the
+  // selection when there is one and the whole note when there is not.
+  function doCopy(scope) {
+    const sel = window.getSelection();
+    const partial = scope === "selection" && sel && !sel.isCollapsed &&
+                    !!sel.toString().trim();
+    const text = window.glyphCopyText(scope);
+    if (!text) { flash("Nothing to copy"); return; }
+    Promise.resolve(window.glyphCopyToClipboard(text)).then((ok) => {
+      if (!ok) { flash("Could not reach the clipboard — copy it by hand"); return; }
+      flash(partial ? "Copied the selection as markdown"
+                    : "Copied the whole note as markdown");
+    });
+  }
+
   function toggleRaw() {
     const d0 = active();
     if (d0 && d0.plain) {
@@ -2999,6 +3206,20 @@ window.__glyphInstallChrome = function () {
       b: "bold", i: "italic", u: "underline", k: "link",
       1: "h1", 2: "h2", 3: "h3",
     };
+    // Select All is handled here rather than left to the browser: with nothing
+    // focused, a browser's own ⌘A selects the whole PAGE — toolbar, tabs and
+    // file drawer included — which is never what was wanted. A real input field
+    // keeps its own behavior.
+    if (k === "a" && !e.shiftKey) {
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
+      e.preventDefault();
+      window.glyphSelectAll();
+      return;
+    }
+    // Plain ⌘C is left alone — that is the browser's copy, and it should stay
+    // the browser's copy. ⇧⌘C is the one that yields markdown.
+    if (e.shiftKey && k === "c") { e.preventDefault(); doCopy("selection"); return; }
     if (k === "s") { e.preventDefault(); doSave(); return; }
     if (k === "o") { e.preventDefault(); doOpen(); return; }
     if (k === "n") { e.preventDefault(); openDoc("Untitled.md", ""); return; }

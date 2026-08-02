@@ -176,11 +176,34 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 
 // Lets the first click on an unfocused window reach the page instead of only
 // bringing the window forward — so click-to-edit works on the very first click.
-@interface GlyphWebView : WKWebView
+@interface GlyphWebView : WKWebView <NSUserInterfaceValidations>
 @end
 
 @implementation GlyphWebView
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+
+// Select All was dead in the formatted view, and this is why: WebKit's own
+// selectAll: selects nothing while the page's activeElement is BODY, which is
+// the state -applyMode leaves behind — making the web view first responder does
+// not focus anything INSIDE the page. Measured in a real WKWebView on
+// sample.md: 0 characters selected with BODY focused, 1327 with the article
+// focused. The page focuses the article and sets the Range itself, so this is
+// deterministic instead of depending on where a click last landed.
+- (void)selectAll:(id)sender {
+    [self evaluateJavaScript:@"window.glyphSelectAll ? window.glyphSelectAll() : 0"
+           completionHandler:nil];
+}
+
+// AppKit greys a menu item out when nothing in the responder chain validates it,
+// and WKWebView refuses selectAll: in exactly the state described above — so the
+// item has to be enabled here or the fix above never gets a chance to run.
+- (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
+    if (item.action == @selector(selectAll:)) return YES;
+    if ([WKWebView instancesRespondToSelector:@selector(validateUserInterfaceItem:)]) {
+        return [super validateUserInterfaceItem:item];
+    }
+    return YES;
+}
 @end
 
 // WKUserContentController retains its handler; this keeps the document out of the cycle.
@@ -510,6 +533,9 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     NSButton *codeblock = [self fmtButton:@"curlybraces" title:@"{}" action:@selector(fmtCodeBlock:) tip:@"Code block"];
     NSButton *eraser = [self fmtButton:@"eraser" title:@"⌫" action:@selector(fmtClearFormatting:)
                                    tip:@"Clear formatting from selection"];
+    NSButton *copyAll = [self fmtButton:@"doc.on.doc" title:@"⧉" action:@selector(copyWholeNote:)
+                                    tip:@"Copy the whole note as markdown "
+                                        @"(⇧⌘C copies the selection)"];
 
     NSStackView *stack = [[NSStackView alloc] initWithFrame:bar.bounds];
     stack.translatesAutoresizingMaskIntoConstraints = YES;
@@ -519,12 +545,15 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     stack.edgeInsets = NSEdgeInsetsMake(0, 12, 0, 12);
     stack.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     NSArray<NSButton *> *buttons =
-        @[undo, redo, h1, h2, h3, bold, italic, underline, strike, hl, code,
+        // copyAll sits third to match the shared toolbar the other platforms
+        // draw, where it has to be reachable without scrolling on a phone.
+        @[undo, redo, copyAll, h1, h2, h3, bold, italic, underline, strike, hl, code,
           link, image, bullets, check, quote, callout, table, codeblock, eraser];
     for (NSButton *b in buttons) {
         [stack addView:b inGravity:NSStackViewGravityCenter];
     }
     [stack setCustomSpacing:20 afterView:redo];
+    [stack setCustomSpacing:20 afterView:copyAll];
     [stack setCustomSpacing:20 afterView:h3];
     [stack setCustomSpacing:20 afterView:code];
     [stack setCustomSpacing:20 afterView:image];
@@ -699,7 +728,8 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         a == @selector(fmtChecklist:) || a == @selector(fmtQuote:) || a == @selector(fmtCallout:) ||
         a == @selector(fmtTable:) || a == @selector(fmtCodeBlock:) ||
         a == @selector(fmtClearFormatting:) || a == @selector(fmtUndo:) ||
-        a == @selector(fmtRedo:)) {
+        a == @selector(fmtRedo:) || a == @selector(copyAsMarkdown:) ||
+        a == @selector(copyWholeNote:)) {
         return YES;
     }
     return [super validateUserInterfaceItem:item];
@@ -714,6 +744,59 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         @"window.glyphToolbar && window.glyphToolbar('%@')", cmd];
     [self.webView evaluateJavaScript:js completionHandler:nil];
     [self.webView.window makeFirstResponder:self.webView];
+}
+
+#pragma mark - Copy as markdown
+
+// Ordinary ⌘C is deliberately left alone: in the raw view it is NSTextView's own
+// copy, and in the formatted view it is WebKit's, which is what someone pressing
+// ⌘C in a rendered page expects. These two give MARKDOWN instead — the rendered
+// text arrives with every heading, bullet marker and emphasis flattened away,
+// which is useless for pasting a draft anywhere that understands markdown.
+- (void)putOnPasteboard:(NSString *)text {
+    if (!text.length) return;
+    NSPasteboard *pb = [NSPasteboard generalPasteboard];
+    [pb clearContents];
+    [pb setString:text forType:NSPasteboardTypeString];
+}
+
+// ⇧⌘C — the selection if there is one, the whole note if there is not, so one
+// shortcut covers both of the things a reader actually wants.
+- (void)copyAsMarkdown:(id)sender {
+    [self copyMarkdownScope:@"selection"];
+}
+
+// The toolbar button. Always the whole note, because a button with no selection
+// behind it should do one predictable thing.
+- (void)copyWholeNote:(id)sender {
+    [self copyMarkdownScope:@"all"];
+}
+
+- (void)copyMarkdownScope:(NSString *)scope {
+    if (self.editing) {
+        // The raw view already holds exactly the file's text, so there is
+        // nothing to serialize — and for a .txt this is the only correct
+        // answer, since that file must never go near the markdown path (rule 40).
+        NSRange sel = self.textView.selectedRange;
+        BOOL wantSelection = [scope isEqualToString:@"selection"] && sel.length > 0;
+        [self putOnPasteboard:wantSelection
+            ? [self.textView.string substringWithRange:sel]
+            : (self.text ?: @"")];
+        return;
+    }
+    if (!self.webView || !self.pageReady) { [self putOnPasteboard:self.text ?: @""]; return; }
+    NSString *js = [NSString stringWithFormat:
+        @"window.glyphCopyText ? window.glyphCopyText('%@') : null", scope];
+    __weak MarkdownDocument *weakSelf = self;
+    [self.webView evaluateJavaScript:js completionHandler:^(id result, NSError *error) {
+        MarkdownDocument *self2 = weakSelf;
+        if (!self2) return;
+        // A page that cannot answer still must not leave her with nothing —
+        // self.text is the last text the page synced, so it is the honest
+        // fallback rather than silently copying an empty string.
+        [self2 putOnPasteboard:[result isKindOfClass:[NSString class]] ? result
+                                                                       : (self2.text ?: @"")];
+    }];
 }
 
 - (void)fmtH1:(id)sender { self.editing ? [self applyHeadingLevel:1] : [self previewCommand:@"h1"]; }

@@ -167,6 +167,126 @@
       r.docDirRestoredDoc = window.glyphGetText().indexOf("#") >= 0;
     }
 
+    // --- select all, and copy as markdown ---
+    // Select All was dead in the Mac app's formatted view: WebKit's selectAll:
+    // selects nothing while the page's activeElement is BODY, which is the
+    // state the app leaves behind after making the web view first responder
+    // (measured: 0 characters vs 1327 with the article focused). And Copy gave
+    // the RENDERED text, with every heading, bullet and emphasis flattened
+    // away. Both are page-side now, so both are assertable in every engine.
+    {
+      var savedCopyDoc = window.glyphGetText();
+      window.renderMarkdown(
+        "# Title\n\nFirst **bold** line.\n\n## Second\n\n- one\n- two\n\nLast line.\n");
+
+      var count = window.glyphSelectAll();
+      var selAll = window.getSelection().toString();
+      r.selectAllReturnsLength = typeof count === "number" && count > 0;
+      r.selectAllSpansWholeNote =
+        selAll.indexOf("Title") >= 0 && selAll.indexOf("Last line") >= 0;
+
+      var all = window.glyphCopyText("all");
+      r.copyAllIsMarkdown = all.indexOf("# Title") >= 0 && all.indexOf("## Second") >= 0 &&
+                            all.indexOf("**bold**") >= 0 && all.indexOf("- one") >= 0;
+      r.copyAllMatchesFile = all === window.glyphGetText();
+
+      // A multi-block selection must stop where the selection stops.
+      var mdEl = document.getElementById("md");
+      var h2 = mdEl.querySelector("h2");
+      var list = mdEl.querySelector("ul");
+      var sel = window.getSelection();
+      var rg = document.createRange();
+      rg.setStartBefore(h2);
+      rg.setEndAfter(list);
+      sel.removeAllRanges(); sel.addRange(rg);
+      var part = window.glyphCopyText("selection");
+      r.copySelectionKeepsBlocks = part.indexOf("## Second") >= 0 && part.indexOf("- one") >= 0;
+      r.copySelectionStopsAtSelection =
+        part.indexOf("# Title") < 0 && part.indexOf("Last line") < 0;
+
+      // A selection that begins and ends INSIDE one paragraph clones bare text
+      // and inline elements. serializeBlock has no case for those and falls
+      // through to outerHTML, so without the paragraph-wrapping pass this puts
+      // raw <strong> markup on the clipboard instead of markdown (rule 14).
+      var strong = mdEl.querySelector("strong");
+      var rg2 = document.createRange();
+      rg2.setStartBefore(strong.previousSibling || strong);
+      rg2.setEndAfter(strong);
+      sel.removeAllRanges(); sel.addRange(rg2);
+      var inline = window.glyphCopyText("selection");
+      r.copyPartialKeepsEmphasis = inline.indexOf("**bold**") >= 0;
+      r.copyPartialLeaksNoHtml = inline.indexOf("<strong") < 0 && inline.indexOf("</") < 0;
+
+      // Nothing selected falls back to the whole note, so one shortcut covers
+      // both of the things a reader wants.
+      sel.removeAllRanges();
+      r.copySelectionFallsBackToWhole =
+        window.glyphCopyText("selection") === window.glyphGetText();
+
+      // Every surface but macOS writes the clipboard from here, and the phone
+      // is not a secure context so navigator.clipboard does not exist there.
+      r.copyClipboardHelper = typeof window.glyphCopyToClipboard === "function";
+
+      // cloneContents() returns the CONTENTS of a range and never the element
+      // they sat in, so selecting part of a list hands over bare <li> nodes and
+      // part of a table bare <tr>. serializeBlock has a case for neither.
+      // Measured before the re-wrap: two bullets came back as "alpha\nbeta",
+      // two checklist items as " one\n two", and two table rows as
+      // "\n1\n2\n\n\n3\n4". Selecting a few bullets is the most ordinary
+      // "copy a section" there is, so these are the cases that matter most.
+      var pick = function (a, b) {
+        var g = document.createRange();
+        g.setStartBefore(a); g.setEndAfter(b);
+        var s2 = window.getSelection(); s2.removeAllRanges(); s2.addRange(g);
+      };
+
+      window.renderMarkdown("# T\n\n- alpha\n- beta\n- gamma\n\nafter\n");
+      var lis = document.querySelectorAll("#md ul li");
+      pick(lis[0], lis[1]);
+      r.copyPartOfListKeepsMarkers = window.glyphCopyText("selection") === "- alpha\n- beta";
+
+      window.renderMarkdown("- [ ] one\n- [x] two\n- [ ] three\n");
+      var tlis = document.querySelectorAll("#md ul li");
+      pick(tlis[0], tlis[1]);
+      r.copyPartOfChecklistKeepsBoxes =
+        window.glyphCopyText("selection") === "- [ ] one\n- [x] two";
+
+      window.renderMarkdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n");
+      var trs = document.querySelectorAll("#md table tbody tr");
+      if (trs.length >= 2) {
+        pick(trs[0], trs[1]);
+        var rowsMd = window.glyphCopyText("selection");
+        // Markdown has no table without a header row, so the first selected row
+        // becomes one. What matters is that it is still a table, not loose text.
+        r.copyPartOfTableStaysATable =
+          rowsMd.indexOf("| 1 | 2 |") >= 0 && rowsMd.indexOf("| 3 | 4 |") >= 0 &&
+          rowsMd.indexOf("---") >= 0;
+      }
+
+      window.renderMarkdown("> quoted one\n>\n> quoted two\n\nafter\n");
+      var qps = document.querySelectorAll("#md blockquote p");
+      if (qps.length) {
+        pick(qps[0], qps[qps.length - 1]);
+        r.copyInsideQuoteKeepsMarker =
+          window.glyphCopyText("selection").indexOf("> quoted one") === 0;
+      }
+
+      window.renderMarkdown("> [!note] Heads up\n> the body line\n");
+      var cbs = document.querySelectorAll("#md .callout p");
+      if (cbs.length) {
+        pick(cbs[cbs.length - 1], cbs[cbs.length - 1]);
+        r.copyInsideCalloutKeepsType =
+          window.glyphCopyText("selection").indexOf("[!note]") >= 0;
+      }
+
+      // Whatever the selection, raw markup must never reach the clipboard.
+      r.copyNeverLeaksMarkup = !/<(li|tr|td|th|ul|ol|table|p|strong|span|input)[ >]/i
+        .test(window.glyphCopyText("selection"));
+
+      window.renderMarkdown(savedCopyDoc);
+      r.copyRestoredDoc = window.glyphGetText().indexOf("#") >= 0;
+    }
+
     r.ok = Object.keys(r).every(function (k) {
       if (k === "serialized" || /Error$/.test(k)) return true;
       var v = r[k];

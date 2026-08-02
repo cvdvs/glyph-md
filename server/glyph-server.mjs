@@ -29,7 +29,7 @@
 import { createServer } from "node:http";
 import { readFile, writeFile, readdir, stat, rename, mkdir, unlink } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { networkInterfaces, homedir, hostname } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -177,6 +177,15 @@ function sha(text) {
   return "sha256-" + createHash("sha256").update(text, "utf8").digest("base64");
 }
 
+function iconVersion() {
+  try {
+    const bytes = readFileSync(path.join(REPO, "assets", "apple-touch-icon.png"));
+    return createHash("sha256").update(bytes).digest("hex").slice(0, 10);
+  } catch {
+    return "0";
+  }
+}
+
 async function composePage() {
   const viewer = await readFile(path.join(REPO, "Resources", "viewer.html"), "utf8");
   const marked = await readFile(path.join(REPO, "Resources", "marked.min.js"), "utf8");
@@ -192,9 +201,10 @@ async function composePage() {
   // icon and a display mode, and neither means anything to the desktop builds.
   // The icon is a separate request rather than a data: URI so it does not add
   // 47KB of base64 to every build of the app on three platforms.
+  const ICON_V = iconVersion();
   const iosTags = [
-    '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
-    '<link rel="icon" href="/apple-touch-icon.png">',
+    `<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=${ICON_V}">`,
+    `<link rel="icon" href="/apple-touch-icon.png?v=${ICON_V}">`,
     // Opens without Safari's chrome, so it feels like an app rather than a page.
     '<meta name="apple-mobile-web-app-capable" content="yes">',
     '<meta name="mobile-web-app-capable" content="yes">',

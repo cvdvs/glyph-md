@@ -70,6 +70,15 @@ jobs:
         run: clang -fobjc-arc Scripts/webkit-smoke.m -o /tmp/webkit-smoke -framework Cocoa -framework WebKit
       - name: Run the shared assertion suite
         run: /tmp/webkit-smoke /tmp/composed.html sample.md Scripts/smoke.js /tmp/mac-result.json
+      # The one failure the page-side suites structurally cannot see: Select All
+      # was dead in the seam between AppKit and WebKit, and the page was fine.
+      - name: Select All and Copy as Markdown, from the AppKit side
+        run: |
+          clang -fobjc-arc Scripts/selectall-smoke.m Sources/MarkdownDocument.m \
+            Sources/GlyphTheme.m Sources/GlyphHighlighter.m Sources/GlyphGutter.m \
+            Sources/GlyphVault.m -o /tmp/selectall-smoke \
+            -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers
+          /tmp/selectall-smoke /tmp/composed.html sample.md
       - name: Security — a hostile document must not execute
         run: |
           python3 Scripts/make-preview.py Scripts/fixtures/hostile.md /tmp/hostile.html

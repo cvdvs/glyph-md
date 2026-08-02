@@ -44,6 +44,18 @@ with no browser chrome — the page ships the `apple-touch-icon` and web-app tag
 sizes its touch targets to 44pt, and pads the toolbar for the notch so nothing
 hides under the status bar.
 
+### Copying a note out
+
+The copy button — third from the left in the toolbar — puts the **whole note on
+the clipboard as markdown**, ready to paste into a message, an email or a chat
+with an assistant. Not the flattened text a phone's own Copy would give you:
+headings, bullets, bold and links all survive.
+
+It has to work without `navigator.clipboard`, because that API only exists in a
+*secure context* and the server is plain `http` on a LAN or Tailscale address —
+measured, not assumed. The button falls back to the older copy command, which
+works everywhere and has to run inside the tap itself.
+
 Node standard library only, nothing to install. `--port=NNNN` changes the port.
 
 ## What is safe, and what to avoid

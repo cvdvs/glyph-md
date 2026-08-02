@@ -139,6 +139,12 @@ int main(int argc, const char *argv[]) {
         [editMenu addItem:Item(@"Paste", @selector(paste:), @"v", 0)];
         [editMenu addItem:Item(@"Select All", @selector(selectAll:), @"a", 0)];
         [editMenu addItem:[NSMenuItem separatorItem]];
+        // Plain Copy gives the rendered text, which loses every heading, bullet
+        // and emphasis. These two give the markdown itself.
+        [editMenu addItem:Item(@"Copy as Markdown", @selector(copyAsMarkdown:), @"c",
+                               NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+        [editMenu addItem:Item(@"Copy Whole Note as Markdown", @selector(copyWholeNote:), @"", 0)];
+        [editMenu addItem:[NSMenuItem separatorItem]];
 
         NSMenuItem *findRoot = [[NSMenuItem alloc] initWithTitle:@"Find" action:nil keyEquivalent:@""];
         NSMenu *findMenu = [[NSMenu alloc] initWithTitle:@"Find"];
