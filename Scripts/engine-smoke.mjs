@@ -10,8 +10,8 @@
 // Scripts/fixtures/golden-sample.md (regenerate that with --update-golden).
 
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, writeFile, mkdir, rm } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,11 +113,26 @@ const chrome = spawn(chromePath, [
 let chromeErr = "";
 chrome.stderr.on("data", (d) => { chromeErr += d.toString(); });
 
-const cleanup = async () => {
+// Chrome must never outlive this script. cleanup() is called at every planned
+// exit below, but the UNPLANNED ones skipped all of them: a rejected CDP promise
+// or a Ctrl-C killed node and launchd adopted the browser, so a headless Chrome
+// with no window sat on ~350MB until the machine was rebooted. Measured on the
+// owner's Mac: 18 orphaned instances, 6.1GB, the oldest 7 days old, plus 26
+// abandoned profile directories worth 1.8GB. "exit" catches the crash paths and
+// must be SYNCHRONOUS — hence rmSync, not the promises rm — and the signal
+// handlers catch the interrupt ones, which never run "exit" on their own.
+let cleaned = false;
+const cleanup = () => {
+  if (cleaned) return;
+  cleaned = true;
   try { chrome.kill("SIGKILL"); } catch {}
-  await rm(profile, { recursive: true, force: true }).catch(() => {});
-  await rm(pagePath, { force: true }).catch(() => {});
+  try { rmSync(profile, { recursive: true, force: true }); } catch {}
+  try { rmSync(pagePath, { force: true }); } catch {}
 };
+process.on("exit", cleanup);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => { cleanup(); process.exit(130); });
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

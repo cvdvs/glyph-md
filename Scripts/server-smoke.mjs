@@ -11,6 +11,7 @@
 // every "blocked" case here is a file that must stay untouched.
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, stat } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,6 +39,17 @@ await symlink(path.join(root, "secret.md"), path.join(drafts, "escape.md")).catc
 
 const PORT = 40000 + Math.floor((process.pid % 20000));
 const srv = spawn(process.execPath, [SERVER, drafts, `--port=${PORT}`], { stdio: ["ignore", "pipe", "pipe"] });
+// The finally block at the bottom covers a thrown assertion, but a signal never
+// reaches it — Ctrl-C would leave the server running and its temp root on disk.
+// Same lesson as Scripts/engine-smoke.mjs: a spawned child outlives an
+// interrupted harness unless something is listening for one.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => {
+    try { srv.kill("SIGKILL"); } catch {}
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
+    process.exit(130);
+  });
+}
 let out = "";
 srv.stdout.on("data", (d) => { out += d.toString(); });
 srv.stderr.on("data", (d) => { out += d.toString(); });
