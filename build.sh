@@ -13,8 +13,8 @@ clang -fobjc-arc -O2 \
   -target "$ARCH-apple-macos13.0" \
   Sources/main.m Sources/MarkdownDocument.m \
   Sources/GlyphTheme.m Sources/GlyphHighlighter.m Sources/GlyphGutter.m \
-  Sources/GlyphVault.m \
-  -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers \
+  Sources/GlyphVault.m Sources/GlyphPDFDocument.m Sources/GlyphBookDocument.m \
+  -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers -framework PDFKit \
   -o "$APP/Contents/MacOS/Glyph"
 
 cp Info.plist "$APP/Contents/Info.plist"

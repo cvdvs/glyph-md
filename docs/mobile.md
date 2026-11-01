@@ -58,6 +58,33 @@ works everywhere and has to run inside the tap itself.
 
 Node standard library only, nothing to install. `--port=NNNN` changes the port.
 
+## PDFs
+
+Drop a PDF anywhere in the served folder and it appears in the file list. It opens
+in a tab, every page, and pinch zoom works. Nothing needs restarting; open the side
+menu and the list refreshes.
+
+PDFs are read-only, and the server refuses to write one. Pages are pictures, so
+text can't be selected and links can't be tapped. A password-protected PDF says so
+rather than opening. Scanned PDFs work, including the JBIG2 and JPEG 2000 formats.
+
+The reader is [PDF.js](https://mozilla.github.io/pdf.js/) and it runs on the phone,
+so the computer never parses a PDF. It is used by the phone server only: the desktop
+apps don't include it, and the Mac app reads PDFs through Apple's PDFKit instead.
+
+If something goes wrong on the phone, it is reported to the computer's log
+(`~/Library/Logs/glyph-server.log`, lines starting `glyph-phone:`), since a phone
+has no console of its own.
+
+## Books
+
+EPUB books work the same way: drop one in the folder and it appears in the file
+list. It opens in a tab, one chapter at a time, with Contents, footnotes you can
+follow and come back from, and an **Aa** panel for size, font, spacing, margins,
+alignment and page color. Your settings and your place in each book are remembered
+on that device. Books are read-only. A copy-protected book says so rather than
+opening.
+
 ## What is safe, and what to avoid
 
 - **Every request needs the token.** Without it the API answers 401. The token
@@ -66,9 +93,9 @@ Node standard library only, nothing to install. `--port=NNNN` changes the port.
 - **A request can never leave the served folder.** Every path is treated as a
   name inside the folder; `..`, absolute paths, and symlinks that point outside
   are all refused. `Scripts/server-smoke.mjs` is the test that proves it.
-- **Only text files** are listed, read, and written — markdown plus `.txt`,
-  `.text` and `.log`. A plain text file opens in the literal view and is saved
-  byte for byte; the markdown renderer never touches it.
+- **Only text files are written** — markdown plus `.txt`, `.text` and `.log`. A
+  plain text file opens in the literal view and is saved byte for byte; the
+  markdown renderer never touches it. PDFs and books are listed and read, never written.
 - **Keep it on your home network.** It binds LAN-wide so the phone can reach it,
   which is fine behind a home router. **Do not port-forward it to the public
   internet** — it would be a file-editing endpoint open to the world.

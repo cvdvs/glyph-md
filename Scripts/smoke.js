@@ -287,6 +287,29 @@
       r.copyRestoredDoc = window.glyphGetText().indexOf("#") >= 0;
     }
 
+    // A note that was only read stays exactly as it arrived. The serializer
+    // tidies * into -, and comparing its output to the file called this an edit,
+    // so saving or closing an untouched note rewrote it.
+    if (typeof window.glyphFlush === "function") {
+      var savedFlushDoc = window.glyphGetText();
+      var posted = [];
+      var realSink = window.__glyphLocalSink;
+      window.__glyphLocalSink = function (m) { posted.push(m); };
+      var untidy = "---\ntitle: x\n---\n* star\n\n__bold__ and _em_\n";
+      window.renderMarkdown(untidy);
+      r.flushLeavesReadNoteAlone = window.glyphFlush() === untidy;
+      r.readNoteMeansNoEdit = !posted.some(function (m) { return m.type === "source"; });
+      r.tidyingIsStillAvailable = window.glyphGetText() !== untidy;
+
+      var mdEl = document.getElementById("md");
+      mdEl.querySelector("li").textContent = "changed";
+      var edited = window.glyphFlush();
+      r.editAfterRenderIsAnEdit = edited.indexOf("changed") >= 0 && edited !== untidy;
+      r.editKeepsFrontmatter = edited.indexOf("title: x") >= 0;
+      window.__glyphLocalSink = realSink;
+      window.renderMarkdown(savedFlushDoc);
+    }
+
     r.ok = Object.keys(r).every(function (k) {
       if (k === "serialized" || /Error$/.test(k)) return true;
       var v = r[k];

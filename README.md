@@ -22,6 +22,8 @@ One interface everywhere. `Resources/viewer.html` *is* the app — the renderer,
 - **⌘-click opens links** in your browser; plain click places the cursor. **⌘E** flips to the raw markdown text and back — and the raw view is a proper source editor: syntax coloring that uses the same palette as the formatted view (an H2 is gold in both), dimmed markers so you read the writing rather than the punctuation, and a line-number gutter.
 - **Copy as markdown.** ⌘A selects the note, ⇧⌘C copies it — the selection if there is one, the whole note if there is not — as *markdown*, not as flattened text. A toolbar button copies the whole note in one click, which is the only way to do it on a phone.
 - Word count, find (⌘F in raw mode), autosave with macOS version history, and pasted markdown formats itself.
+- **PDFs too, on the Mac.** File → Open, Open With → Glyph, or drop one on the Dock icon: it opens as a tab beside your notes, read-only, through Apple's own PDFKit, so scans, text selection and links all work. Password-protected files ask for the password. Glyph doesn't take over double-clicking a PDF.
+- **And books.** EPUBs open the same way: a chapter at a time, in your own type, with Contents, footnotes, and an **Aa** panel for size, font, spacing, margins, alignment and page color. Your place in each book is remembered. Copy-protected books aren't supported.
 
 No Electron. The whole app is a few small source files; it compiles in seconds and launches instantly.
 
@@ -131,7 +133,13 @@ untangle; close the phone and the edit is already on disk.
 full-screen with its own icon and no browser chrome: touch targets sized to 44pt,
 the toolbar padded for the notch, and a text-size control for reading in bed.
 
-Node standard library only — nothing to `npm install`. **Security:** every
+**PDFs open too.** Drop one in the folder and it shows up in the file list and opens
+in a tab, every page, scans included, read-only. The reader is [PDF.js](https://mozilla.github.io/pdf.js/)
+(Apache 2.0, [license](server/vendor/pdfjs/LICENSE)), vendored for the phone server
+only, so the desktop apps stay dependency-free. **EPUB books** work too, with the
+same reader as the Mac app and nothing to install.
+
+Node standard library only — nothing to `npm install` — and a vendored copy of PDF.js for PDFs. **Security:** every
 request needs the token, a request can never read or write outside the served
 folder, an unsaved edit is kept on the phone and retried if the connection drops,
 and a file changed on the computer meanwhile is never silently overwritten. Keep

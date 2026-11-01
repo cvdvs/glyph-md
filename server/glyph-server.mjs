@@ -22,6 +22,8 @@
 //   - Only markdown and plain-text files are listed, read and written. A .txt
 //     is served literally and saved byte for byte — the page pins it to its
 //     literal view, so the markdown renderer never reformats a plain file.
+//   - A PDF is listed and read, never written, and the phone's browser does the
+//     parsing, so this machine never interprets one.
 //   - Bind is LAN-wide so the phone can reach it, but it is meant for a home
 //     network behind a router. Do NOT port-forward it to the open internet; for
 //     access away from home use a private tunnel (Tailscale), which is
@@ -46,6 +48,7 @@ const PLAIN_EXT = new Set([".txt", ".text", ".log"]);
 const SKIP_DIRS = new Set([".git", ".obsidian", "node_modules", ".trash", ".DS_Store"]);
 const MAX_FILES = 5000;
 const MAX_WRITE_BYTES = 25 * 1024 * 1024;  // a .md note far past anything real
+const MAX_LOG_BYTES = 8 * 1024;
 
 // ---------------------------------------------------------------- arguments
 const args = process.argv.slice(2).filter((a) => !a.startsWith("-"));
@@ -116,6 +119,15 @@ function isServable(p) {
   return MD_EXT.has(e) || PLAIN_EXT.has(e);
 }
 
+// Kept out of isServable on purpose: that check also guards the write route, and
+// a PDF or a book must never be writable.
+function isPdf(p) {
+  return path.extname(p).toLowerCase() === ".pdf";
+}
+function isBook(p) {
+  return path.extname(p).toLowerCase() === ".epub";
+}
+
 // ------------------------------------------------------------- file listing
 async function listFiles() {
   const out = [];
@@ -133,7 +145,7 @@ async function listFiles() {
       const rel = relBase ? relBase + "/" + e.name : e.name;
       if (e.isDirectory()) {
         await walk(abs, rel);
-      } else if (e.isFile() && isServable(e.name)) {
+      } else if (e.isFile() && (isServable(e.name) || isPdf(e.name) || isBook(e.name))) {
         try {
           const s = await stat(abs);
           out.push({ path: rel, name: e.name, size: s.size, mtime: Math.floor(s.mtimeMs) });
@@ -166,13 +178,31 @@ async function writeAtomic(abs, text) {
 }
 
 // --------------------------------------------------------- the served page
+// PDF.js reads PDFs inside the phone's browser. These are Mozilla's own files,
+// unmodified. They are named by a hash of their contents so a phone caches them
+// once and an upgrade can never leave it holding a mismatched pair.
+const PDFJS = new Map(["pdf.min.mjs", "pdf.worker.min.mjs"].map((f) => [
+  "/vendor/pdfjs/" + f, readFileSync(path.join(HERE, "vendor", "pdfjs", f)),
+]));
+// The decoders for scanned pages. Named by the same hash through their folder,
+// because PDF.js builds their addresses itself and leaves no room for a ?v=.
+const DECODERS = ["jbig2.wasm", "openjpeg.wasm"].map((f) => [
+  f, readFileSync(path.join(HERE, "vendor", "pdfjs", "wasm", f)),
+]);
+const PDFJS_V = createHash("sha256")
+  .update(Buffer.concat([...PDFJS.values(), ...DECODERS.map(([, bytes]) => bytes)]))
+  .digest("hex").slice(0, 10);
+const PDFJS_WASM = new Map(DECODERS.map(([f, bytes]) => [`/vendor/pdfjs/${PDFJS_V}/${f}`, bytes]));
+
 // The same viewer.html the desktop app uses, composed with the chrome layer on
 // and a `server` flag. The Content-Security-Policy is pinned by hash (a static
 // page has no per-load nonce step) and relaxed ONLY to connect-src 'self', so
-// the page's own scripts may call this server's API. A note still cannot: its
-// scripts are blocked by the script-src hash allowlist, so connect-src 'self'
-// grants the trusted chrome layer a channel to the API and grants a document
-// nothing.
+// the page's own scripts may call this server's API, and to 'self' for scripts
+// and workers, so the page can load PDF.js. A note still cannot run anything:
+// the sanitizer removes its script tags, and everything this server answers
+// without a token is either HTML (refused as a script by nosniff), an icon, or
+// PDF.js itself. So these grant the trusted chrome layer what it needs and grant
+// a document nothing.
 function sha(text) {
   return "sha256-" + createHash("sha256").update(text, "utf8").digest("base64");
 }
@@ -194,6 +224,9 @@ async function composePage() {
     "window.__glyphChrome = true;\n" +
     "window.__glyphServer = true;\n" +
     'window.__glyphPlatform = "web";\n' +
+    `window.__glyphPdfJs = "/vendor/pdfjs/pdf.min.mjs?v=${PDFJS_V}";\n` +
+    `window.__glyphPdfWorker = "/vendor/pdfjs/pdf.worker.min.mjs?v=${PDFJS_V}";\n` +
+    `window.__glyphPdfWasm = "/vendor/pdfjs/${PDFJS_V}/";\n` +
     'window.__initialName = "";\n' +
     "window.__initial = \"\";";
 
@@ -218,13 +251,13 @@ async function composePage() {
   let page = viewer
     .replace("/*__MARKED_JS__*/", () => marked)
     .replace("/*__INITIAL__*/", () => initial)
-    .replace("connect-src 'none'", "connect-src 'self'")
+    .replace("connect-src 'none'", "connect-src 'self'; worker-src 'self'")
     .replace("<meta charset=\"utf-8\">", '<meta charset="utf-8">\n' + iosTags)
     .replaceAll(' nonce="/*__CSP_NONCE__*/"', "");
 
   const scripts = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   const styles = [...page.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
-  page = page.replace("'/*__CSP_SCRIPT__*/'", scripts.map((b) => "'" + sha(b) + "'").join(" "));
+  page = page.replace("'/*__CSP_SCRIPT__*/'", ["'self'", ...scripts.map((b) => "'" + sha(b) + "'")].join(" "));
   page = page.replace("'/*__CSP_STYLE__*/'", styles.map((b) => "'" + sha(b) + "'").join(" "));
   return page;
 }
@@ -279,9 +312,39 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // Public like the interface itself: a module import cannot carry a token,
+    // and this is a published library, not anything of hers. The header is what
+    // a worker takes its policy from, so the thread that parses an untrusted PDF
+    // has no network of its own. It may compile the scanned-page decoders, which
+    // the page fetches and hands it, and only it may: the page's own policy still
+    // refuses WebAssembly.
+    if (req.method === "GET" && PDFJS.has(p)) {
+      return send(res, 200, PDFJS.get(p), {
+        "Content-Type": "text/javascript; charset=utf-8",
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Security-Policy": "default-src 'none'; script-src 'wasm-unsafe-eval'",
+      });
+    }
+    if (req.method === "GET" && PDFJS_WASM.has(p)) {
+      return send(res, 200, PDFJS_WASM.get(p), {
+        "Content-Type": "application/wasm",
+        "Cache-Control": "public, max-age=31536000, immutable",
+      });
+    }
+
     // Everything under /api needs the token.
     if (p.startsWith("/api/")) {
       if (!tokenOk(req)) return json(res, 401, { error: "unauthorized" });
+
+      // A phone has no console, so this log is the only place anything that goes
+      // wrong on one can be seen. One line, printable text, and never the token:
+      // a stack trace can carry the page's address, and the address holds it.
+      if (req.method === "POST" && p === "/api/log") {
+        const line = (await readBody(req, MAX_LOG_BYTES)).toString("utf8")
+          .replaceAll(TOKEN, "(token)").replace(/[^\x20-\x7e]+/g, " ");
+        console.log(`glyph-phone: ${new Date().toISOString()} ${line}`);
+        return json(res, 200, { ok: true });
+      }
 
       if (req.method === "GET" && p === "/api/files") {
         return json(res, 200, { root: path.basename(ROOT), files: await listFiles() });
@@ -297,6 +360,34 @@ const server = createServer(async (req, res) => {
           }
           const [text, s] = await Promise.all([readFile(real, "utf8"), stat(real)]);
           return json(res, 200, { path: url.searchParams.get("path"), text, mtime: Math.floor(s.mtimeMs) });
+        } catch {
+          return json(res, 404, { error: "not found" });
+        }
+      }
+
+      if (req.method === "GET" && p === "/api/epub") {
+        const abs = resolveInRoot(url.searchParams.get("path") || "");
+        if (!abs || !isBook(abs)) return json(res, 400, { error: "bad path" });
+        try {
+          const real = realpathSync(abs);
+          if (real !== ROOT && !real.startsWith(ROOT + path.sep)) {
+            return json(res, 400, { error: "bad path" });  // symlink out
+          }
+          return send(res, 200, await readFile(real), { "Content-Type": "application/epub+zip" });
+        } catch {
+          return json(res, 404, { error: "not found" });
+        }
+      }
+
+      if (req.method === "GET" && p === "/api/pdf") {
+        const abs = resolveInRoot(url.searchParams.get("path") || "");
+        if (!abs || !isPdf(abs)) return json(res, 400, { error: "bad path" });
+        try {
+          const real = realpathSync(abs);
+          if (real !== ROOT && !real.startsWith(ROOT + path.sep)) {
+            return json(res, 400, { error: "bad path" });  // symlink out
+          }
+          return send(res, 200, await readFile(real), { "Content-Type": "application/pdf" });
         } catch {
           return json(res, 404, { error: "not found" });
         }

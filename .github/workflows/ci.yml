@@ -39,6 +39,10 @@ jobs:
         run: node Scripts/engine-smoke.mjs --fidelity
       - name: Server — the phone cannot reach past the served folder
         run: node Scripts/server-smoke.mjs
+      - name: PDFs and books — every page draws, and no file is touched
+        run: |
+          node Scripts/pdf-smoke.mjs
+          node Scripts/pdf-smoke.mjs --suite book-smoke
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,6 +83,15 @@ jobs:
             Sources/GlyphVault.m -o /tmp/selectall-smoke \
             -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers
           /tmp/selectall-smoke /tmp/composed.html sample.md
+      # Inside a copy of the built app, so the real Info.plist and page are in play.
+      - name: Documents — a PDF opens read-only, and a note only read is never written
+        run: Scripts/doc-smoke.sh
+      # WebKit is what an iPhone runs, so this is the run that counts for PDFs.
+      - name: PDFs and books, in the phone's engine
+        run: |
+          clang -fobjc-arc Scripts/pdf-webkit.m -framework Cocoa -framework WebKit -o /tmp/pdf-webkit
+          node Scripts/pdf-smoke.mjs --webkit /tmp/pdf-webkit
+          node Scripts/pdf-smoke.mjs --suite book-smoke --webkit /tmp/pdf-webkit
       - name: Security — a hostile document must not execute
         run: |
           python3 Scripts/make-preview.py Scripts/fixtures/hostile.md /tmp/hostile.html

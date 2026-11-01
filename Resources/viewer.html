@@ -513,6 +513,12 @@
   body.glyph-chrome { padding-top: var(--glyph-bar-h, 86px); }
   body.glyph-chrome #content { padding-top: 20px; }
 
+  /* iOS 27 blurs whatever sits in the top of a home-screen web app, and a page has
+     no way to turn that off: it is the system's scroll edge effect, and it reaches
+     about 25pt past the status bar (measured from screenshots on an iPhone 14 Pro
+     Max, where the inset is 59pt). So the chrome starts below it. Nothing is added
+     where the inset is 0, which is every desktop and any browser tab. */
+  :root { --glyph-top: calc(env(safe-area-inset-top, 0px) + min(26px, env(safe-area-inset-top, 0px))); }
   #glyph-bar {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -528,7 +534,7 @@
        in a normal browser window and on every desktop, so this costs nothing
        there — and syncBarHeight measures the padded height, so the document is
        still offset by exactly the right amount. */
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: var(--glyph-top);
     /* A notch leaves the corners unusable in landscape. */
     padding-left: env(safe-area-inset-left, 0px);
     padding-right: env(safe-area-inset-right, 0px);
@@ -683,7 +689,7 @@
   }
   body.glyph-drawer-open #glyph-drawer-backdrop { opacity: 1; pointer-events: auto; }
   .glyph-drawer-head {
-    padding: max(14px, env(safe-area-inset-top)) 16px 8px;
+    padding: max(14px, var(--glyph-top)) 16px 8px;
     font: 600 13px -apple-system, system-ui, sans-serif;
     color: var(--fg);
   }
@@ -735,6 +741,228 @@
     border-right: 1px solid var(--border);
   }
   body.glyph-server #glyph-menu { display: block; }
+
+  /* A PDF takes the document pane's place. The toolbar row goes with it, since
+     every button on it edits text; the tab strip stays, and syncBarHeight moves
+     the page up into the space. */
+  body.glyph-server #glyph-pdf { display: none; }
+  body.glyph-server.glyph-pdf #content, body.glyph-server.glyph-pdf #glyph-tools { display: none; }
+  body.glyph-server.glyph-pdf #glyph-pdf {
+    display: block;
+    padding: 12px max(12px, env(safe-area-inset-right)) max(56px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  body.glyph-server .glyph-pdf-page { max-width: 980px; margin: 0 auto 12px; background: #fff; overflow: hidden; }
+  body.glyph-server .glyph-pdf-page canvas { display: block; width: 100%; height: 100%; }
+  body.glyph-server #glyph-book { display: none; }
+  body.glyph-server.glyph-reading #glyph-book { display: block; }
+  body.glyph-server.glyph-reading #content, body.glyph-server.glyph-reading #glyph-tools { display: none; }
+  body.glyph-server .glyph-pdf-failed { margin: 0; padding: 24px; color: #555; text-align: center; }
+  /* A book. Its own tokens, because Paper, Sepia and Night have to win over the
+     app's theme, and scoped under .glyph-book so a note page never sees any of it. */
+  .glyph-book {
+    --book-bg: var(--bg); --book-fg: var(--fg); --book-muted: var(--muted);
+    --book-line: var(--border); --book-accent: var(--accent);
+    --book-raise: rgba(var(--fg-rgb), 0.08);
+    /* Scanned books store black text on transparency, which disappears on a dark
+       page. A book was laid out for white paper, so that is what goes behind it. */
+    --book-image: #fff;
+    min-height: 100vh;
+    background: var(--book-bg);
+    color: var(--book-fg);
+  }
+  .glyph-book[data-page="paper"] {
+    --book-bg: #fbf7ef; --book-fg: #2c2720; --book-muted: #7c7265; --book-line: #e6dfd1;
+    --book-accent: #8a5a2b; --book-raise: rgba(44, 39, 32, 0.07); --book-image: transparent;
+  }
+  .glyph-book[data-page="sepia"] {
+    --book-bg: #efe2c9; --book-fg: #3b2f21; --book-muted: #7d6c54; --book-line: #dccdb0;
+    --book-accent: #8a5a2b; --book-raise: rgba(59, 47, 33, 0.08); --book-image: transparent;
+  }
+  .glyph-book[data-page="night"] {
+    --book-bg: #0f0f12; --book-fg: #a9a59c; --book-muted: #6f6c65; --book-line: #26262b;
+    --book-accent: #b59a6a; --book-raise: rgba(169, 165, 156, 0.1);
+  }
+  .glyph-book-bar {
+    position: sticky;
+    top: var(--glyph-bar-h, 0px);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 44px;
+    padding: 0 max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+    background: var(--book-bg);
+    border-bottom: 1px solid var(--book-line);
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .glyph-book-button {
+    flex: none;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--book-fg);
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .glyph-book-button:disabled { color: var(--book-line); cursor: default; }
+  .glyph-book-aa { font-size: 17px; }
+  .glyph-book-where {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--book-muted);
+    font-size: 13px;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .glyph-book-text {
+    max-width: var(--book-measure, 34em);
+    margin: 0 auto;
+    padding: 32px max(var(--book-margin, 22px), env(safe-area-inset-right)) 24px
+             max(var(--book-margin, 22px), env(safe-area-inset-left));
+    font-family: var(--book-font);
+    font-size: var(--book-size, 18px);
+    line-height: var(--book-spacing, 1.6);
+    overflow-wrap: break-word;
+    box-sizing: content-box;
+  }
+  .glyph-book[data-align="justify"] .glyph-book-text { text-align: justify; hyphens: auto; -webkit-hyphens: auto; }
+  .glyph-book-text p { margin: 0 0 0.8em; }
+  .glyph-book-text h1, .glyph-book-text h2, .glyph-book-text h3,
+  .glyph-book-text h4, .glyph-book-text h5, .glyph-book-text h6 {
+    margin: 1.6em 0 0.7em;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: left;
+    color: inherit;
+  }
+  .glyph-book-text h1 { font-size: 1.6em; }
+  .glyph-book-text h2 { font-size: 1.35em; }
+  .glyph-book-text h3 { font-size: 1.15em; }
+  .glyph-book-text h4, .glyph-book-text h5, .glyph-book-text h6 { font-size: 1em; }
+  .glyph-book-text a { color: var(--book-accent); }
+  .glyph-book-failed { color: var(--book-muted); text-align: center; }
+  .glyph-book-text img {
+    max-width: 100%;
+    max-height: calc(100vh - 150px);
+    vertical-align: middle;
+    background: var(--book-image);
+  }
+  .glyph-book-text p > img:only-child, .glyph-book-text div > img:only-child { display: block; margin: 1em auto; }
+  .glyph-book-text .glyph-book-pending {
+    display: block;
+    width: 100%;
+    aspect-ratio: var(--book-page, 3 / 4);
+    max-height: none;
+    margin: 1em auto;
+    object-fit: contain;
+  }
+  .glyph-book-text blockquote { margin: 1em 0 1em 1.2em; padding: 0; border: 0; color: inherit; font-style: normal; }
+  .glyph-book-text hr { margin: 2em auto; width: 30%; border: 0; border-top: 1px solid var(--book-line); }
+  .glyph-book-text table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; }
+  .glyph-book-text th, .glyph-book-text td { padding: 0.3em 0.6em; border: 1px solid var(--book-line); }
+  .glyph-book-text pre { overflow-x: auto; font-size: 0.85em; background: none; }
+  .glyph-book-text [data-book-style~="i"] { font-style: italic; }
+  .glyph-book-text [data-book-style~="b"] { font-weight: 600; }
+  .glyph-book-text [data-book-style~="c"] { text-align: center; }
+  .glyph-book-text [data-book-style~="r"] { text-align: right; }
+  .glyph-book-text [data-book-style~="s"] { font-variant-caps: small-caps; }
+  .glyph-book-text [data-book-style~="l"] { font-size: 1.35em; line-height: 1.3; }
+  .glyph-book-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: var(--book-measure, 34em);
+    margin: 0 auto;
+    padding: 8px var(--book-margin, 22px) max(28px, env(safe-area-inset-bottom));
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .glyph-book-place { color: var(--book-muted); font-size: 13px; }
+  .glyph-book-scrim { display: none; position: fixed; inset: 0; z-index: 38; }
+  .glyph-book[data-open] .glyph-book-scrim { display: block; }
+  .glyph-book[data-open="contents"] .glyph-book-scrim { background: rgba(0, 0, 0, 0.35); }
+  .glyph-book-sheet {
+    display: none;
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    z-index: 40;
+    flex-direction: column;
+    width: min(360px, 88vw);
+    background: var(--book-bg);
+    border-right: 1px solid var(--book-line);
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .glyph-book[data-open="contents"] .glyph-book-sheet { display: flex; }
+  .glyph-book-sheet-head {
+    padding: max(16px, var(--glyph-top, 0px)) 18px 12px max(18px, env(safe-area-inset-left));
+    border-bottom: 1px solid var(--book-line);
+  }
+  .glyph-book-title { font-size: 16px; font-weight: 600; line-height: 1.3; }
+  .glyph-book-author { margin-top: 3px; color: var(--book-muted); font-size: 13px; }
+  .glyph-book-sheet-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 6px max(16px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    -webkit-overflow-scrolling: touch;
+  }
+  .glyph-book-entry {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px 8px calc(12px + var(--depth, 0) * 16px);
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--book-fg);
+    font: inherit;
+    font-size: 15px;
+    line-height: 1.3;
+    text-align: left;
+    cursor: pointer;
+  }
+  .glyph-book-entry:disabled { color: var(--book-muted); cursor: default; }
+  .glyph-book-entry[aria-current="true"] { background: var(--book-raise); }
+  .glyph-book-panel {
+    display: none;
+    position: fixed;
+    top: calc(var(--glyph-bar-h, 0px) + 52px);
+    right: max(8px, env(safe-area-inset-right));
+    z-index: 40;
+    box-sizing: border-box;
+    width: min(380px, calc(100% - 16px));
+    padding: 6px 14px;
+    background: var(--book-bg);
+    border: 1px solid var(--book-line);
+    border-radius: 10px;
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .glyph-book[data-open="format"] .glyph-book-panel { display: block; }
+  .glyph-book-row { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+  .glyph-book-row + .glyph-book-row { border-top: 1px solid var(--book-line); }
+  .glyph-book-row-name { flex: 0 0 58px; color: var(--book-muted); font-size: 13px; }
+  .glyph-book-choice { display: flex; flex: 1; gap: 2px; }
+  .glyph-book-choice button {
+    flex: 1;
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--book-fg);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .glyph-book-choice button[aria-pressed="true"] { background: var(--book-raise); font-weight: 600; }
+  .glyph-book-size { flex: 1; align-self: center; color: var(--book-fg); font-size: 13px; text-align: center; }
+  .glyph-book-error { margin: 40vh 24px 0; color: var(--muted); text-align: center; }
+  body.glyph-book-only { margin: 0; padding: 0; }
+  body.glyph-book-only #content { display: none; }
 
   @media (max-width: 640px) {
     body.glyph-chrome #content { padding-left: 16px; padding-right: 16px; padding-top: 14px; }
@@ -990,7 +1218,9 @@ function safeDataRaw(value) {
   return /^!?\[\[[^\[\]\n]{1,300}\]\]$/.test(String(value || "")) ? value : null;
 }
 
-function scrubNode(root) {
+// `keep` names extra attributes to let through. Only the book reader passes it, for
+// the two it set itself after removing any the book supplied.
+function scrubNode(root, keep) {
   const drop = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
   const nodes = [];
@@ -1016,7 +1246,8 @@ function scrubNode(root) {
     [...el.attributes].forEach((attr) => {
       const name = attr.name.toLowerCase();
       // Every event handler, plus anything the allowlists do not name.
-      const ok = (SAFE_ATTRS["*"].has(name) || (allowed && allowed.has(name)))
+      const ok = (SAFE_ATTRS["*"].has(name) || (allowed && allowed.has(name)) ||
+                  (keep && keep.has(name)))
         && !name.startsWith("on");
       if (!ok) { el.removeAttribute(attr.name); return; }
       if (name === "data-raw") {
@@ -1560,6 +1791,7 @@ function serializeDoc(root) {
 
 let curPrefix = "";
 let lastSerialized = "";
+let lastSource = "";
 let syncTimer = null;
 
 // Which modifier means "command" here. The shell may set __glyphPlatform before
@@ -1626,14 +1858,16 @@ function postToApp(msg) {
 function doSync() {
   if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
   const md = serializeDoc();
-  const full = curPrefix + md;
   if (md !== lastSerialized) {
     lastSerialized = md;
-    postToApp({ type: "source", text: full });
+    lastSource = curPrefix + md;
+    postToApp({ type: "source", text: lastSource });
   }
   // Returned so the app can flush synchronously before saving or closing,
-  // instead of posting and hoping a fixed delay was long enough.
-  return full;
+  // instead of posting and hoping a fixed delay was long enough. With nothing
+  // edited this is the text exactly as it arrived, not its tidied form, so a
+  // note that was only read is never written back.
+  return lastSource;
 }
 window.glyphFlush = doSync;
 window.glyphSerialize = serializeDoc;
@@ -2075,6 +2309,11 @@ window.renderMarkdown = function (src) {
   if (window.__glyphProtected) {
     window.glyphSetProtected(true, window.__glyphProtectedDetail);
   }
+  // The baseline for "was this edited?" is this render's own serialization. It
+  // cannot be the file's text: the serializer tidies what it reads (a * bullet
+  // comes back as -), so that comparison called every untidy note edited.
+  lastSerialized = serializeDoc();
+  lastSource = src || "";
   window.scrollTo(0, y);
 };
 
@@ -2285,6 +2524,669 @@ window.glyphCopyToClipboard = function (text) {
    Tabs, toolbar, open/save, word count, theme and a raw view — everything the
    macOS app gets from AppKit. Runs ONLY when window.__glyphChrome is set, so on
    macOS not one element is created and not one listener is bound. */
+/* ---------- books ----------
+   An EPUB is a zip of web pages, so a browser engine can read one with nothing
+   added: the zip is walked here and inflated by the engine's DecompressionStream.
+   This sits outside the chrome layer because the Mac app has no chrome and reads
+   books through this same code. Nothing here runs until a book is opened.
+
+   A book is untrusted input like a note. Its pages are parsed in documents that
+   have no scripting, moved into an inert template, and go through the same scrub
+   as a note before they reach the page. Its stylesheets are never applied: they
+   are only read for the few things that carry meaning (see bookStyles). */
+
+class BookError extends Error {}
+const BOOK_MAX_ENTRY = 64 * 1024 * 1024;
+const BOOK_ATTRS = new Set(["data-book-id", "data-book-style"]);
+const XHTML_NS = "http://www.w3.org/1999/xhtml";
+const BOOK_VOID = /^(area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr)$/i;
+
+function zipReader(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const notABook = () => new BookError("This file isn't a readable book");
+  let end = -1;
+  for (let i = bytes.length - 22, stop = Math.max(0, bytes.length - 65557); i >= stop; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { end = i; break; }
+  }
+  if (end < 0) throw notABook();
+  const entries = new Map();
+  const names = new TextDecoder();
+  let at = view.getUint32(end + 16, true);
+  for (let i = view.getUint16(end + 10, true); i > 0; i--) {
+    if (at + 46 > bytes.length || view.getUint32(at, true) !== 0x02014b50) throw notABook();
+    const nameLength = view.getUint16(at + 28, true);
+    // Lower-cased because books regularly get the case of their own links wrong.
+    entries.set(names.decode(bytes.subarray(at + 46, at + 46 + nameLength)).toLowerCase(), {
+      method: view.getUint16(at + 10, true),
+      packed: view.getUint32(at + 20, true),
+      local: view.getUint32(at + 42, true),
+    });
+    at += 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+  }
+  const has = (name) => entries.has(name.toLowerCase());
+  async function read(name) {
+    const entry = entries.get(name.toLowerCase());
+    if (!entry || entry.local + 30 > bytes.length) throw notABook();
+    const start = entry.local + 30 + view.getUint16(entry.local + 26, true) +
+                  view.getUint16(entry.local + 28, true);
+    const packed = bytes.subarray(start, start + entry.packed);
+    if (entry.method === 0) return packed;
+    if (entry.method !== 8) throw notABook();
+    if (typeof DecompressionStream !== "function") {
+      throw new BookError("This device is too old to open books");
+    }
+    // Counted as it arrives: what a zip says about its own size can't be trusted,
+    // and a few kilobytes can inflate to more than a phone has.
+    const stream = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    const reader = stream.getReader();
+    const parts = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > BOOK_MAX_ENTRY) { reader.cancel(); throw new BookError("Part of this book is too large to open"); }
+      parts.push(value);
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    parts.forEach((p) => { out.set(p, offset); offset += p.length; });
+    return out;
+  }
+  return { has, read };
+}
+
+function bookDecode(bytes) {
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder("utf-16le").decode(bytes);
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder("utf-16be").decode(bytes);
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 200));
+  const declared = /encoding=["']([\w-]+)["']/.exec(head);
+  try { return new TextDecoder(declared ? declared[1] : "utf-8").decode(bytes); }
+  catch (e) { return new TextDecoder("utf-8").decode(bytes); }
+}
+
+// Once the text is decoded the XML declaration has done its job, and it can do harm:
+// Chrome's page process dies on one saying standalone="yes" ahead of a DOCTYPE, with
+// no error to catch, and a whole publisher's catalog is written that way.
+function bookClean(text) {
+  return text.replace(/^\ufeff/, "").replace(/^\s*<\?xml[^>]*\?>/, "");
+}
+
+function bookResolve(fromFile, href) {
+  const hash = href.indexOf("#");
+  let path = hash < 0 ? href : href.slice(0, hash);
+  try { path = decodeURIComponent(path); } catch (e) { /* a literal % in a name */ }
+  const parts = path.startsWith("/") ? [] : fromFile.split("/").slice(0, -1);
+  path.split("/").forEach((s) => {
+    if (s === "..") parts.pop();
+    else if (s && s !== ".") parts.push(s);
+  });
+  return { path: parts.join("/"), fragment: hash < 0 ? "" : href.slice(hash + 1) };
+}
+
+// What a declaration block says that a reader would miss if it were lost.
+function bookFlags(declarations) {
+  const flags = [];
+  if (/font-style\s*:\s*(italic|oblique)/i.test(declarations)) flags.push("i");
+  if (/font-weight\s*:\s*(bold|[6-9]00)/i.test(declarations)) flags.push("b");
+  if (/text-align\s*:\s*center/i.test(declarations)) flags.push("c");
+  if (/text-align\s*:\s*right/i.test(declarations)) flags.push("r");
+  if (/font-variant(-caps)?\s*:\s*small-caps/i.test(declarations)) flags.push("s");
+  const size = /font-size\s*:\s*([\d.]+)(em|rem|%)/i.exec(declarations);
+  if (/font-size\s*:\s*(x{1,2}-)?large/i.test(declarations) ||
+      (size && parseFloat(size[1]) / (size[2] === "%" ? 100 : 1) >= 1.25)) flags.push("l");
+  return flags;
+}
+
+// A publisher's stylesheet is not applied: the reader's own settings have to win,
+// and a book must not be able to style the page. But in 213 of 924 real books most
+// of the emphasis exists only there (<span class="calibre7">, with the italic in
+// the CSS), so dropping it outright would lose it. So it is read, once, for class
+// names and those few properties, and they come back as flags the page's own rules
+// draw. split rather than regular expressions: a stylesheet is untrusted and a
+// pattern across the whole text can be made to run for minutes (rule 16).
+function bookStyles(css) {
+  const styles = new Map();
+  const text = css.split("/*").map((part, i) => {
+    if (!i) return part;
+    const close = part.indexOf("*/");
+    return close < 0 ? "" : part.slice(close + 2);
+  }).join(" ");
+  text.split("}").forEach((rule) => {
+    const open = rule.lastIndexOf("{");
+    if (open < 0) return;
+    const flags = bookFlags(rule.slice(open + 1));
+    if (!flags.length) return;
+    rule.slice(0, open).split(",").forEach((selector) => {
+      const last = selector.trim().split(/[\s>+~]+/).pop();
+      const classes = last.match(/\.[\w-]+/g);
+      if (!classes || classes.length !== 1) return;
+      const name = classes[0].slice(1);
+      styles.set(name, [...new Set([...(styles.get(name) || []), ...flags])]);
+    });
+  });
+  return styles;
+}
+
+async function bookParse(bytes) {
+  const zip = zipReader(bytes);
+  const all = (root, tag) => [...root.getElementsByTagNameNS("*", tag)];
+  const xml = (text) => new DOMParser().parseFromString(bookClean(text), "application/xml");
+  const text = async (path) => bookDecode(await zip.read(path));
+  const notABook = () => new BookError("This file isn't a readable book");
+  if (!zip.has("META-INF/container.xml")) throw notABook();
+  const rootfile = all(xml(await text("META-INF/container.xml")), "rootfile")[0];
+  const opfPath = rootfile && rootfile.getAttribute("full-path");
+  if (!opfPath || !zip.has(opfPath)) throw notABook();
+
+  // Fonts are often scrambled by a method every reader knows, and that is listed
+  // here too. Only a chapter being listed means the book is really locked.
+  if (zip.has("META-INF/encryption.xml")) {
+    const locked = all(xml(await text("META-INF/encryption.xml")), "CipherReference")
+      .some((r) => /\.x?html?$/i.test(r.getAttribute("URI") || ""));
+    if (locked) throw new BookError("This book is copy-protected, so it can't be opened here");
+  }
+
+  const opf = xml(await text(opfPath));
+  const items = new Map();
+  all(opf, "item").forEach((item) => {
+    items.set(item.getAttribute("id"), {
+      path: bookResolve(opfPath, item.getAttribute("href") || "").path,
+      type: item.getAttribute("media-type") || "",
+      properties: item.getAttribute("properties") || "",
+    });
+  });
+  const spine = all(opf, "itemref").map((ref) => items.get(ref.getAttribute("idref")))
+    .filter((item) => item && /html/i.test(item.type) && zip.has(item.path));
+  if (!spine.length) throw notABook();
+
+  const firstText = (tag) => ((all(opf, tag)[0] || {}).textContent || "").trim();
+  const styles = new Map();
+  for (const item of items.values()) {
+    if (item.type !== "text/css" || !zip.has(item.path)) continue;
+    (bookStyles(await text(item.path))).forEach((flags, name) => {
+      styles.set(name, [...new Set([...(styles.get(name) || []), ...flags])]);
+    });
+  }
+
+  const label = (node) => (node ? node.textContent : "").replace(/\s+/g, " ").trim();
+  const contents = [];
+  async function readNav(item) {
+    const doc = xml(await text(item.path));
+    const navs = all(doc, "nav");
+    const nav = navs.find((n) => /toc/.test(n.getAttribute("epub:type") || "")) || navs[0];
+    const walk = (list, depth) => {
+      [...list.children].filter((li) => li.localName === "li").forEach((li) => {
+        const a = [...li.children].find((c) => c.localName === "a");
+        const nested = [...li.children].find((c) => c.localName === "ol");
+        const heading = [...li.children].find((c) => c.localName === "span");
+        if (a && a.getAttribute("href")) {
+          contents.push({ label: label(a), depth, ...bookResolve(item.path, a.getAttribute("href")) });
+        } else if (heading && nested) {
+          contents.push({ label: label(heading), depth, path: "", fragment: "" });   // "Part One"
+        }
+        if (nested) walk(nested, depth + 1);
+      });
+    };
+    const top = nav && [...nav.children].find((c) => c.localName === "ol");
+    if (top) walk(top, 0);
+  }
+  async function readNcx(item) {
+    const doc = xml(await text(item.path));
+    const walk = (parent, depth) => {
+      [...parent.children].filter((n) => n.localName === "navPoint").forEach((point) => {
+        const name = all(point, "text")[0];
+        const content = [...point.children].find((c) => c.localName === "content");
+        if (content && content.getAttribute("src")) {
+          contents.push({ label: label(name), depth, ...bookResolve(item.path, content.getAttribute("src")) });
+        }
+        walk(point, depth + 1);
+      });
+    };
+    const map = all(doc, "navMap")[0];
+    if (map) walk(map, 0);
+  }
+  const navItem = [...items.values()].find((i) => /(^|\s)nav(\s|$)/.test(i.properties));
+  const ncxItem = [...items.values()].find((i) => /dtbncx/.test(i.type));
+  try { if (navItem && zip.has(navItem.path)) await readNav(navItem); } catch (e) { contents.length = 0; }
+  try { if (!contents.length && ncxItem && zip.has(ncxItem.path)) await readNcx(ncxItem); } catch (e) { contents.length = 0; }
+  if (!contents.length) {
+    spine.forEach((item, i) => contents.push({ label: "Part " + (i + 1), depth: 0, path: item.path, fragment: "" }));
+  }
+
+  return { zip, spine, contents, styles, title: firstText("title"), author: firstText("creator"),
+           language: firstText("language") };
+}
+
+function bookImageType(bytes) {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (bytes[0] === 0x47 && bytes[1] === 0x49) return "image/gif";
+  if (bytes[0] === 0x52 && bytes[8] === 0x57) return "image/webp";
+  return /<svg[\s>]/i.test(new TextDecoder().decode(bytes.subarray(0, 2048))) ? "image/svg+xml" : null;
+}
+
+function bookDataURL(bytes, type) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(new Blob([bytes], { type }));
+  });
+}
+
+// Which file in the zip each picture is, until the reader asks for it.
+const bookImages = new WeakMap();
+
+async function bookChapter(book, index) {
+  const path = book.spine[index].path;
+  const source = bookClean(bookDecode(await book.zip.read(path)));
+  const parser = new DOMParser();
+  // XML first, because <a id="x"/> read as HTML would swallow the rest of the
+  // page. But one undeclared &nbsp; is a fatal error to an XML parser.
+  let doc = parser.parseFromString(source, "application/xhtml+xml");
+  if (doc.getElementsByTagName("parsererror").length ||
+      (doc.documentElement && doc.documentElement.namespaceURI !== XHTML_NS)) {
+    // HTML reads <a id="x"/> as an anchor that never closes, so spell those out.
+    const opened = source.replace(/<([a-z][a-z0-9]*)(\s[^<>]*?)?\/>/gi, (tag, name, attrs) =>
+      (BOOK_VOID.test(name) ? tag : "<" + name + (attrs || "") + "></" + name + ">"));
+    doc = parser.parseFromString(opened, "text/html");
+  }
+  const body = doc.getElementsByTagNameNS("*", "body")[0];
+  const tpl = document.createElement("template");
+  const inert = tpl.content.ownerDocument;
+  const root = tpl.content;
+
+  // All of this happens in the parser's document, which nothing is watching.
+  // Importing a style attribute into this page counts as using it, and the page's
+  // policy refuses it, once for every element, so it has to be gone by then.
+  if (body) {
+    // A cover is usually an <svg> holding one <image>, and the scrub drops both.
+    body.querySelectorAll("svg").forEach((svg) => {
+      const image = svg.querySelector("image");
+      const href = image && (image.getAttribute("xlink:href") || image.getAttribute("href"));
+      if (!href) return;
+      const img = doc.createElementNS(XHTML_NS, "img");
+      img.setAttribute("src", href);
+      svg.replaceWith(img);
+    });
+    body.querySelectorAll("*").forEach((el) => {
+      // Removed first, so a book cannot supply these itself.
+      el.removeAttribute("data-book-id");
+      el.removeAttribute("data-book-style");
+      const flags = new Set(bookFlags(el.getAttribute("style") || ""));
+      el.removeAttribute("style");
+      (el.getAttribute("class") || "").split(/\s+/).forEach((name) => {
+        (book.styles.get(name) || []).forEach((flag) => flags.add(flag));
+      });
+      if (flags.size) el.setAttribute("data-book-style", [...flags].join(" "));
+      const id = el.getAttribute("id") || (el.localName === "a" && el.getAttribute("name"));
+      if (!id) return;
+      if (SAFE_TAGS.has(el.localName.toLowerCase())) {
+        el.setAttribute("data-book-id", id);
+      } else {
+        // The scrub unwraps this element (<aside> holding a footnote, <section>
+        // holding a chapter), and a link to it still has to land somewhere.
+        const mark = doc.createElementNS(XHTML_NS, "span");
+        mark.setAttribute("data-book-id", id);
+        el.before(mark);
+      }
+    });
+    [...body.childNodes].forEach((n) => root.appendChild(inert.importNode(n, true)));
+  }
+  scrubNode(root, BOOK_ATTRS);
+
+  root.querySelectorAll("img").forEach((img) => {
+    const src = img.getAttribute("src");
+    const target = src && !/^[a-z][a-z0-9+.-]*:/i.test(src) && bookResolve(path, src).path;
+    if (target && book.zip.has(target)) {
+      bookImages.set(img, target);
+      img.removeAttribute("src");
+    } else {
+      img.replaceWith(inert.createTextNode(img.getAttribute("alt") || ""));
+    }
+  });
+  return root;
+}
+
+const BOOK_FONTS = [
+  ["iowan", "Iowan", '"Iowan Old Style", Palatino, Georgia, serif'],
+  ["charter", "Charter", 'Charter, "Bitstream Charter", Georgia, serif'],
+  ["newyork", "New York", 'ui-serif, "New York", Georgia, serif'],
+  ["system", "System", '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'],
+];
+const BOOK_SPACING = { compact: 1.4, normal: 1.6, open: 1.85 };
+const BOOK_MARGINS = { small: ["12px", "44em"], normal: ["22px", "34em"], large: ["36px", "28em"] };
+// A scanned book is one chapter of hundreds of full-page pictures (378 in one of
+// her books, 167MB), and holding them all would run a phone out of memory. So past
+// this many, a chapter works like a PDF: only the pictures near the screen exist.
+const BOOK_EAGER_IMAGES = 24;
+const BOOK_SIZE_MIN = 13;
+const BOOK_SIZE_MAX = 32;
+
+function bookStored(name, fallback) {
+  try { return JSON.parse(localStorage.getItem(name)) || fallback; } catch (e) { return fallback; }
+}
+function bookStore(name, value) {
+  try { localStorage.setItem(name, JSON.stringify(value)); } catch (e) { /* private mode */ }
+}
+
+// One book on screen. Everything it needs comes through opts, so the phone's tabs
+// and the Mac's window each host it their own way. It starts detached: start()
+// runs once it is in the document, because a saved place needs real layout.
+window.glyphOpenBook = async function (bytes, key, opts) {
+  const book = await bookParse(bytes);
+  const count = book.spine.length;
+  const placeKey = "glyphBookAt:" + key;
+  const defaults = { size: 18, font: "iowan", spacing: "normal", margins: "normal", align: "left", page: "auto" };
+  const prefs = Object.assign(defaults, bookStored("glyphBookPrefs", {}));
+  let current = 0;
+  let showing = 0;
+  let trail = null;
+
+  const make = (tag, className, label) => {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (label) el.textContent = label;
+    return el;
+  };
+  const el = make("div", "glyph-book");
+  const bar = make("div", "glyph-book-bar");
+  const contentsButton = make("button", "glyph-book-button", "Contents");
+  const backButton = make("button", "glyph-book-button", "Back");
+  backButton.hidden = true;
+  const chapterName = make("div", "glyph-book-where");
+  const formatButton = make("button", "glyph-book-button glyph-book-aa", "Aa");
+  formatButton.setAttribute("aria-label", "Text and page settings");
+  bar.append(contentsButton, backButton, chapterName, formatButton);
+
+  const text = make("article", "glyph-book-text");
+  if (book.language) text.lang = book.language;
+  const foot = make("nav", "glyph-book-foot");
+  const previousButton = make("button", "glyph-book-button", "Previous");
+  const place = make("span", "glyph-book-place");
+  const nextButton = make("button", "glyph-book-button", "Next");
+  foot.append(previousButton, place, nextButton);
+
+  const scrim = make("div", "glyph-book-scrim");
+  const sheet = make("div", "glyph-book-sheet");
+  const sheetHead = make("div", "glyph-book-sheet-head");
+  sheetHead.append(make("div", "glyph-book-title", book.title || "Untitled"));
+  if (book.author) sheetHead.append(make("div", "glyph-book-author", book.author));
+  const sheetList = make("div", "glyph-book-sheet-list");
+  sheet.append(sheetHead, sheetList);
+  const panel = make("div", "glyph-book-panel");
+  el.append(bar, text, foot, scrim, sheet, panel);
+
+  const overlay = (which) => {
+    if (which) el.dataset.open = which;
+    else delete el.dataset.open;
+  };
+  const spineIndex = (path) => book.spine.findIndex((i) => i.path.toLowerCase() === path.toLowerCase());
+  const chapterAt = (index) => {
+    let best = null;
+    book.contents.forEach((entry) => {
+      const at = spineIndex(entry.path);
+      if (at >= 0 && at <= index) best = entry;
+    });
+    return best;
+  };
+  const scrollRange = () => Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+  const fraction = () => Math.min(1, window.scrollY / scrollRange());
+  const remember = () => bookStore(placeKey, { chapter: current, fraction: fraction() });
+
+  async function showPicture(img, always) {
+    const path = bookImages.get(img);
+    if (!path || img.getAttribute("src")) return;
+    let url = null;
+    try {
+      const bytes = await book.zip.read(path);
+      const type = bookImageType(bytes);
+      if (type) url = await bookDataURL(bytes, type);
+    } catch (e) { /* a picture missing is not a chapter missing */ }
+    if (!url) {
+      img.replaceWith(document.createTextNode(img.getAttribute("alt") || ""));
+      return;
+    }
+    if (!always && !nearby.has(img)) return;   // scrolled past while it loaded
+    img.src = url;
+    await img.decode().catch(() => {});
+    if (always || !img.naturalWidth) return;
+    // Keeps its place once its picture is let go, and the pages not yet seen take
+    // the same shape, because a scanned book's pages are all alike.
+    const shape = img.naturalWidth + " / " + img.naturalHeight;
+    img.style.setProperty("aspect-ratio", shape);
+    text.style.setProperty("--book-page", shape);
+  }
+  const nearby = new Set();
+  const picturesSeen = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        nearby.add(entry.target);
+        showPicture(entry.target, false);
+      } else {
+        nearby.delete(entry.target);
+        entry.target.removeAttribute("src");
+      }
+    });
+  }, { rootMargin: "150% 0px" });
+
+  async function go(index, where) {
+    if (index < 0 || index >= count) return;
+    const ticket = ++showing;
+    let root;
+    try {
+      root = await bookChapter(book, index);
+    } catch (e) {
+      // One bad chapter is not the whole book, so the way past it stays open.
+      if (!(e instanceof BookError) && opts.onProblem) opts.onProblem(e);
+      root = make("p", "glyph-book-failed",
+                  e instanceof BookError ? e.message : "This part of the book could not be read");
+    }
+    if (ticket !== showing) return;        // a later tap got there first
+    current = index;
+    picturesSeen.disconnect();
+    nearby.clear();
+    text.replaceChildren(root);
+    const pictures = [...text.querySelectorAll("img")];
+    if (pictures.length <= BOOK_EAGER_IMAGES) {
+      await Promise.all(pictures.map((img) => showPicture(img, true)));
+    } else {
+      pictures.forEach((img) => {
+        img.classList.add("glyph-book-pending");
+        picturesSeen.observe(img);
+      });
+    }
+    if (ticket !== showing) return;
+    const entry = chapterAt(index);
+    chapterName.textContent = entry ? entry.label : (book.title || "");
+    place.textContent = (index + 1) + " of " + count;
+    previousButton.disabled = index === 0;
+    nextButton.disabled = index === count - 1;
+    paintContents();
+    const anchor = where && where.fragment &&
+      [...text.querySelectorAll("[data-book-id]")].find((n) => n.dataset.bookId === where.fragment);
+    if (anchor) {
+      const top = anchor.getBoundingClientRect().top + window.scrollY - bar.getBoundingClientRect().height * 2;
+      window.scrollTo(0, Math.max(0, top));
+    } else {
+      window.scrollTo(0, where && where.fraction ? where.fraction * scrollRange() : 0);
+    }
+    remember();
+    if (opts.onMove) opts.onMove();
+  }
+
+  function paintContents() {
+    sheetList.replaceChildren();
+    book.contents.forEach((entry) => {
+      const row = make("button", "glyph-book-entry", entry.label || "Untitled");
+      row.style.setProperty("--depth", String(Math.min(entry.depth, 4)));
+      const at = spineIndex(entry.path);
+      if (at === current) row.setAttribute("aria-current", "true");
+      row.addEventListener("click", () => {
+        overlay(null);
+        trail = null;
+        backButton.hidden = true;
+        go(at, { fragment: entry.fragment });
+      });
+      row.disabled = at < 0;
+      sheetList.appendChild(row);
+    });
+  }
+
+  function applyPrefs() {
+    const font = BOOK_FONTS.find((f) => f[0] === prefs.font) || BOOK_FONTS[0];
+    const margins = BOOK_MARGINS[prefs.margins] || BOOK_MARGINS.normal;
+    el.dataset.page = prefs.page;
+    el.dataset.align = prefs.align;
+    el.style.setProperty("--book-size", prefs.size + "px");
+    sizeShown.textContent = prefs.size;
+    el.style.setProperty("--book-font", font[2]);
+    el.style.setProperty("--book-spacing", String(BOOK_SPACING[prefs.spacing] || BOOK_SPACING.normal));
+    el.style.setProperty("--book-margin", margins[0]);
+    el.style.setProperty("--book-measure", margins[1]);
+    panel.querySelectorAll("[data-pref]").forEach((b) => {
+      b.setAttribute("aria-pressed", String(String(prefs[b.dataset.pref]) === b.dataset.value));
+    });
+  }
+  // Changing the text changes how long the chapter is, so the place is kept as a
+  // share of the chapter rather than a distance from the top.
+  function changePref(name, value) {
+    const was = fraction();
+    prefs[name] = value;
+    bookStore("glyphBookPrefs", prefs);
+    applyPrefs();
+    window.scrollTo(0, was * scrollRange());
+  }
+
+  const row = (name, ...controls) => {
+    const line = make("div", "glyph-book-row");
+    line.append(make("span", "glyph-book-row-name", name), ...controls);
+    panel.appendChild(line);
+  };
+  const choice = (pref, options) => {
+    const group = make("div", "glyph-book-choice");
+    options.forEach(([value, label, font]) => {
+      const b = make("button", "", label);
+      b.dataset.pref = pref;
+      b.dataset.value = value;
+      if (font) b.style.setProperty("font-family", font);
+      b.addEventListener("click", () => changePref(pref, value));
+      group.appendChild(b);
+    });
+    return group;
+  };
+  const sizeControl = make("div", "glyph-book-choice");
+  const sizeStep = (label, step, name) => {
+    const b = make("button", "", label);
+    b.setAttribute("aria-label", name);
+    b.addEventListener("click", () => {
+      changePref("size", Math.min(BOOK_SIZE_MAX, Math.max(BOOK_SIZE_MIN, prefs.size + step)));
+    });
+    sizeControl.appendChild(b);
+  };
+  sizeStep("A−", -1, "Smaller text");
+  const sizeShown = make("span", "glyph-book-size");
+  sizeControl.appendChild(sizeShown);
+  sizeStep("A+", 1, "Larger text");
+  row("Size", sizeControl);
+  row("Font", choice("font", BOOK_FONTS));
+  row("Spacing", choice("spacing", [["compact", "Tight"], ["normal", "Normal"], ["open", "Open"]]));
+  row("Margins", choice("margins", [["small", "Small"], ["normal", "Normal"], ["large", "Large"]]));
+  row("Align", choice("align", [["left", "Left"], ["justify", "Justified"]]));
+  row("Page", choice("page", [["auto", "Auto"], ["paper", "Paper"], ["sepia", "Sepia"], ["night", "Night"]]));
+
+  contentsButton.addEventListener("click", () => {
+    overlay(el.dataset.open === "contents" ? null : "contents");
+    const here = sheetList.querySelector('[aria-current="true"]');
+    if (here) here.scrollIntoView({ block: "center" });
+  });
+  formatButton.addEventListener("click", () => overlay(el.dataset.open === "format" ? null : "format"));
+  scrim.addEventListener("click", () => overlay(null));
+  previousButton.addEventListener("click", () => go(current - 1));
+  nextButton.addEventListener("click", () => go(current + 1));
+  // One step back is all a footnote needs.
+  backButton.addEventListener("click", () => {
+    const to = trail;
+    trail = null;
+    backButton.hidden = true;
+    if (to) go(to.chapter, { fraction: to.fraction });
+  });
+  text.addEventListener("click", (e) => {
+    const link = e.target.closest && e.target.closest("a[href]");
+    if (!link) return;
+    e.preventDefault();
+    const href = link.getAttribute("href");
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) { if (opts.openLink) opts.openLink(href); return; }
+    const to = bookResolve(book.spine[current].path, href);
+    const index = href.startsWith("#") ? current : spineIndex(to.path);
+    if (index < 0) return;
+    trail = { chapter: current, fraction: fraction() };
+    backButton.hidden = false;
+    go(index, { fragment: to.fragment });
+  });
+
+  let saveTimer = null;
+  const onScroll = () => {
+    if (!el.isConnected || saveTimer) return;
+    saveTimer = setTimeout(() => { saveTimer = null; if (el.isConnected) remember(); }, 500);
+  };
+  const onKey = (e) => {
+    if (!el.isConnected || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "ArrowRight") go(current + 1);
+    else if (e.key === "ArrowLeft") go(current - 1);
+    else if (e.key === "Escape") overlay(null);
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  document.addEventListener("keydown", onKey);
+  applyPrefs();
+
+  return {
+    el, title: book.title, author: book.author,
+    progress: () => (current + 1) + " of " + count,
+    start: () => {
+      const at = bookStored(placeKey, {});
+      return go(at.chapter >= 0 && at.chapter < count ? at.chapter : 0, { fraction: at.fraction });
+    },
+    close: () => {
+      picturesSeen.disconnect();
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("keydown", onKey);
+    },
+  };
+};
+
+// The Mac app hands a book over in pieces: one evaluateJavaScript call carrying a
+// whole 100MB book as a string is not something to depend on.
+let bookPieces = [];
+window.glyphBookPiece = function (base64) { bookPieces.push(atob(base64)); };
+window.glyphBookShow = async function (key) {
+  const pieces = bookPieces;
+  bookPieces = [];
+  const bytes = new Uint8Array(pieces.reduce((sum, p) => sum + p.length, 0));
+  let offset = 0;
+  pieces.forEach((p) => {
+    for (let i = 0; i < p.length; i++) bytes[offset + i] = p.charCodeAt(i);
+    offset += p.length;
+  });
+  document.body.classList.add("glyph-book-only");
+  document.querySelectorAll(".glyph-book, .glyph-book-error").forEach((n) => n.remove());
+  try {
+    const reader = await window.glyphOpenBook(bytes, key, {
+      openLink: (url) => postToApp({ type: "openURL", url }),
+    });
+    document.body.appendChild(reader.el);
+    await reader.start();
+    return JSON.stringify({ title: reader.title, author: reader.author });
+  } catch (e) {
+    const note = document.createElement("p");
+    note.className = "glyph-book-error";
+    note.textContent = e instanceof BookError ? e.message : "This book could not be read";
+    document.body.appendChild(note);
+    return JSON.stringify({ error: note.textContent });
+  }
+};
+
 window.__glyphInstallChrome = function () {
   const MODNAME = window.__glyphPlatform === "mac" ? "⌘" : "Ctrl";
   const svg = (d) =>
@@ -2341,10 +3243,17 @@ window.__glyphInstallChrome = function () {
   function captureActive() {
     const d = active();
     if (!d) return;
+    // Nothing to capture, and #md still holds whichever note came before this
+    // tab, so reading it here would hand a PDF that note's text.
+    if (d.pdf || d.book) { d.scrollY = window.scrollY; return; }
     if (document.body.classList.contains("glyph-raw")) {
       if (rawArea.value !== d.text) { d.text = rawArea.value; d.dirty = true; }
     } else {
-      const now = window.glyphGetText();
+      // Flush, not just read: an edit's 600ms timer must not outlive the tab it
+      // belongs to. Left running, it fired over whichever tab came next, and only
+      // a re-render would have cleared #md, so a .txt or a PDF took the old
+      // note's text for its own and a .txt was saved over with it.
+      const now = window.glyphFlush();
       if (now !== d.text) { d.text = now; d.dirty = true; }
     }
     d.scrollY = window.scrollY;
@@ -2392,6 +3301,20 @@ window.__glyphInstallChrome = function () {
     }));
   }
 
+  // A phone has no console, so what goes wrong on one reaches the Mac's log or is
+  // never seen at all. Never awaited: a failed report must not be a second problem.
+  function reportToMac(what, e) {
+    glyphApi("/api/log", {
+      method: "POST",
+      body: JSON.stringify({ what, error: e && e.stack ? e + "\n" + e.stack : String(e || ""),
+                             device: navigator.userAgent }).slice(0, 7000),
+    }).catch(() => {});
+  }
+  if (serverHost()) {
+    window.addEventListener("error", (e) => reportToMac("page error", e.error || e.message));
+    window.addEventListener("unhandledrejection", (e) => reportToMac("unhandled", e.reason));
+  }
+
   // A .txt is PLAIN TEXT, not markdown: it opens in the literal view and stays
   // there, so the renderer and serializer never touch it and it is saved exactly
   // as typed. The formatted view normalizes what it edits (bullet markers,
@@ -2399,6 +3322,8 @@ window.__glyphInstallChrome = function () {
   // byte. Mirrors -isPlainText in the macOS app.
   const PLAIN_EXT = /\.(txt|text|log)$/i;
   const isPlainName = (name) => PLAIN_EXT.test(name || "");
+  const isPdfName = (name) => /\.pdf$/i.test(name || "");
+  const isBookName = (name) => /\.epub$/i.test(name || "");
 
   function openDoc(name, text, handle, dir) {
     const d = { id: nextId++, name: name || "Untitled.md", text: text || "",
@@ -2424,7 +3349,13 @@ window.__glyphInstallChrome = function () {
       // opened first, and a link in the second note looks beside the first one.
       postToApp({ type: "active", id: d.id });
     }
-    if (d.plain) {
+    document.body.classList.toggle("glyph-pdf", !!d.pdf);
+    document.body.classList.toggle("glyph-reading", !!d.book);
+    pdfHost.replaceChildren(...(d.pdf ? [d.pdfEl] : []));
+    bookHost.replaceChildren(...(d.book ? [d.book.el] : []));
+    if (d.pdf || d.book) {
+      document.body.classList.remove("glyph-raw");
+    } else if (d.plain) {
       // Plain text never reaches the renderer. The literal view IS the editor
       // for it, so the file comes back exactly as it went in.
       document.body.classList.add("glyph-raw");
@@ -2445,6 +3376,8 @@ window.__glyphInstallChrome = function () {
     const d = docs[i];
     if (d.dirty && !confirm('"' + d.name + '" has unsaved changes. Close it anyway?')) return;
     docs.splice(i, 1);
+    if (d.pdf) { d.pdfSeen.disconnect(); d.pdfTask.destroy(); }
+    if (d.book) d.book.close();
     if (activeId === id) {
       activeId = null;
       if (docs.length) activate(docs[Math.min(i, docs.length - 1)].id);
@@ -2538,9 +3471,15 @@ window.__glyphInstallChrome = function () {
   const backdrop = document.createElement("div");
   backdrop.id = "glyph-drawer-backdrop";
   backdrop.addEventListener("click", () => closeDrawer());
+  const pdfHost = document.createElement("div");
+  pdfHost.id = "glyph-pdf";
+  const bookHost = document.createElement("div");
+  bookHost.id = "glyph-book";
   if (serverHost()) {
     document.body.appendChild(backdrop);
     document.body.appendChild(drawer);
+    document.body.appendChild(pdfHost);
+    document.body.appendChild(bookHost);
   }
 
   function openDrawer() { document.body.classList.add("glyph-drawer-open"); }
@@ -2599,10 +3538,10 @@ window.__glyphInstallChrome = function () {
     return root;
   }
 
-  // Markdown loses its extension — it is the norm here — while a .txt keeps it,
-  // so it is obvious at a glance which files are plain text.
+  // Markdown loses its extension — it is the norm here — while a .txt or .pdf
+  // keeps it, so it is obvious at a glance which files are which.
   function fileLabel(base) {
-    return isPlainName(base) ? base : base.replace(/\.(md|markdown|mdown|mkd)$/i, "");
+    return isPlainName(base) || isPdfName(base) || isBookName(base) ? base : base.replace(/\.(md|markdown|mdown|mkd)$/i, "");
   }
 
   // Files are shown as a FOLDER TREE, not a flat list: a folder holding
@@ -2713,6 +3652,8 @@ window.__glyphInstallChrome = function () {
     // Already open? Just show it.
     const existing = docs.find((d) => d.serverPath === rel);
     if (existing) { activate(existing.id); closeDrawer(); return; }
+    if (isPdfName(rel)) { openPdf(rel); return; }
+    if (isBookName(rel)) { openBook(rel); return; }
     try {
       const res = await glyphApi("/api/file?path=" + encodeURIComponent(rel));
       if (!res.ok) { flash("Could not open that file"); return; }
@@ -2741,6 +3682,142 @@ window.__glyphInstallChrome = function () {
     }
   }
 
+  // A PDF is read through PDF.js rather than the browser's own viewer, because
+  // Safari shows only the first page of a PDF embedded in a page. It is a tab
+  // with no text: captureActive, scheduleServerSave and the keyboard all stand
+  // aside for d.pdf, and the server refuses to write one in any case.
+  const pdfOpening = new Set();
+  async function openPdf(rel) {
+    if (pdfOpening.has(rel)) return;
+    pdfOpening.add(rel);
+    closeDrawer();
+    paintStatus("Opening PDF…");
+    let task = null;
+    let d = null;
+    try {
+      const res = await glyphApi("/api/pdf?path=" + encodeURIComponent(rel));
+      if (!res.ok) { flash("Could not open that file"); return; }
+      const data = new Uint8Array(await res.arrayBuffer());
+      const lib = await import(window.__glyphPdfJs);
+      lib.GlobalWorkerOptions.workerSrc = window.__glyphPdfWorker;
+      task = lib.getDocument({ data, isEvalSupported: false, verbosity: 0,
+                               wasmUrl: window.__glyphPdfWasm });
+      const pdf = await task.promise;
+      const sizes = await Promise.all(Array.from({ length: pdf.numPages }, async (_, i) => {
+        const v = (await pdf.getPage(i + 1)).getViewport({ scale: 1 });
+        return v.width + " / " + v.height;
+      }));
+      d = { id: nextId++, name: rel.slice(rel.lastIndexOf("/") + 1), text: "",
+            dirty: false, handle: null, scrollY: 0, dir: null, plain: false,
+            serverPath: rel, pdf, pdfTask: task };
+      buildPdfView(d, sizes);
+    } catch (e) {
+      if (task) task.destroy();
+      reportToMac("pdf open", e);
+      flash(e && e.name === "PasswordException" ? "This PDF needs a password, so it can't be opened here"
+                                                : "Could not read that PDF");
+      return;
+    } finally {
+      pdfOpening.delete(rel);
+    }
+    // Outside the try: from here the document is loaded, and a problem showing
+    // it must not be answered by shutting it down underneath its own pages.
+    docs.push(d);
+    activate(d.id);
+  }
+
+  // A book is a tab with no text too, so it stands aside everywhere a PDF does.
+  async function openBook(rel) {
+    if (pdfOpening.has(rel)) return;
+    pdfOpening.add(rel);
+    closeDrawer();
+    paintStatus("Opening book…");
+    let d = null;
+    try {
+      const res = await glyphApi("/api/epub?path=" + encodeURIComponent(rel));
+      if (!res.ok) { flash("Could not open that file"); return; }
+      const reader = await window.glyphOpenBook(new Uint8Array(await res.arrayBuffer()), rel, {
+        onMove: () => paintStatus(),
+        onProblem: (e) => reportToMac("book chapter", e),
+        openLink: (url) => window.open(url, "_blank", "noopener"),
+      });
+      d = { id: nextId++, name: reader.title || rel.slice(rel.lastIndexOf("/") + 1), text: "",
+            dirty: false, handle: null, scrollY: 0, dir: null, plain: false,
+            serverPath: rel, book: reader };
+    } catch (e) {
+      const known = e instanceof BookError;
+      if (!known) reportToMac("book open", e);
+      flash(known ? e.message : "Could not read that book");
+      return;
+    } finally {
+      pdfOpening.delete(rel);
+    }
+    docs.push(d);
+    activate(d.id);
+    await d.book.start();
+  }
+
+  // Every page gets a correctly sized empty box straight away, so scrolling and
+  // the scroll position are right from the start, but only the pages near the
+  // screen hold a picture. A rendered page is a bitmap, and a long document kept
+  // whole would run a phone out of memory. A tab in the background is out of the
+  // document, so its pages count as off screen and let go of theirs as well.
+  function buildPdfView(d, sizes) {
+    d.pdfEl = document.createElement("div");
+    d.pdfSeen = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) paintPdfPage(d.pdf, e.target); else clearPdfPage(e.target);
+      });
+    }, { rootMargin: "100% 0px" });
+    sizes.forEach((ratio, i) => {
+      const box = document.createElement("div");
+      box.className = "glyph-pdf-page";
+      box.style.aspectRatio = ratio;
+      box.dataset.page = String(i + 1);
+      d.pdfEl.appendChild(box);
+      d.pdfSeen.observe(box);
+    });
+  }
+
+  // PDF.js's own limit for phones. Past it iOS can hand back a canvas that takes
+  // drawing without error and shows nothing.
+  const PDF_MAX_PIXELS = 5242880;
+  async function paintPdfPage(pdf, box) {
+    if (box.firstChild) return;
+    const canvas = document.createElement("canvas");
+    box.appendChild(canvas);
+    try {
+      const page = await pdf.getPage(Number(box.dataset.page));
+      if (canvas.parentNode !== box) return;        // scrolled away meanwhile
+      const base = page.getViewport({ scale: 1 });
+      // Drawn a little past the screen's own sharpness so a pinch zoom holds up.
+      const want = box.clientWidth * Math.min(window.devicePixelRatio || 1, 3) * 1.5 / base.width;
+      const cap = Math.sqrt(PDF_MAX_PIXELS / (base.width * base.height));
+      const viewport = page.getViewport({ scale: Math.min(want, cap) });
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      box.renderTask = page.render({ canvas, viewport });
+      await box.renderTask.promise;
+    } catch (e) {
+      if (e && e.name === "RenderingCancelledException") return;   // scrolled away
+      // Said on the page rather than left a blank sheet, which reads as an empty
+      // one. Clearing it means scrolling back tries again.
+      clearPdfPage(box);
+      const note = document.createElement("p");
+      note.className = "glyph-pdf-failed";
+      note.textContent = "This page could not be drawn";
+      box.appendChild(note);
+      reportToMac("pdf page " + box.dataset.page, e);
+    }
+  }
+  function clearPdfPage(box) {
+    if (box.renderTask) { box.renderTask.cancel(); box.renderTask = null; }
+    const canvas = box.firstChild;
+    if (!canvas) return;
+    canvas.width = canvas.height = 0;               // iOS holds the memory otherwise
+    canvas.remove();
+  }
+
   // Autosave to the server: one write in flight at a time, coalescing edits that
   // land while a write is running. A 409 means the file changed on the computer
   // since it was opened here; rather than clobber that, it warns and stops until
@@ -2752,7 +3829,7 @@ window.__glyphInstallChrome = function () {
   // in-flight save; `immediate` skips the debounce for an explicit Save.
   function scheduleServerSave(d, opts) {
     opts = opts || {};
-    if (!d || !d.serverPath) return;
+    if (!d || !d.serverPath || d.pdf || d.book) return;
     d.pendingSave = true;
     if (opts.force) d.forceNext = true;
     if (d.saveTimer) clearTimeout(d.saveTimer);
@@ -3061,8 +4138,6 @@ window.__glyphInstallChrome = function () {
     btn("theme", "Light / dark / system", cycleTheme),
   ].forEach((el) => toolsEl.appendChild(el));
 
-  applyReaderSize();
-
   /* ---------- raw view ---------- */
   // The toolbar button always copies the WHOLE note, because that is what a
   // button with no selection behind it should predictably do. ⇧⌘C copies the
@@ -3092,12 +4167,11 @@ window.__glyphInstallChrome = function () {
     const d = active();
     if (!d) return;
     if (on) {
-      d.text = window.glyphGetText();
+      d.text = window.glyphFlush();
       rawArea.value = d.text;
       rawArea.focus();
     } else {
-      d.text = rawArea.value;
-      d.dirty = true;
+      if (rawArea.value !== d.text) { d.text = rawArea.value; d.dirty = true; }
       window.renderMarkdown(d.text);
       paintTabs();
     }
@@ -3137,6 +4211,10 @@ window.__glyphInstallChrome = function () {
     if (v == null) document.body.style.removeProperty("--reader-size");
     else document.body.style.setProperty("--reader-size", v + "px");
   }
+  // Called here, after the consts it reads. It used to run above them, which only
+  // failed on a device with a saved size, and there it stopped the whole chrome
+  // from starting: no menu button, and every later status update threw.
+  applyReaderSize();
   function nudgeReaderSize(step) {
     const now = storedReaderSize() != null ? storedReaderSize() : defaultReaderSize();
     const next = Math.min(SIZE_MAX, Math.max(SIZE_MIN, Math.round((now + step) * 2) / 2));
@@ -3185,6 +4263,11 @@ window.__glyphInstallChrome = function () {
     }
     if (stickyStatus) { status.textContent = stickyStatus; return; }
     const d = active();
+    if (d && d.pdf) {
+      status.textContent = d.pdf.numPages.toLocaleString() + (d.pdf.numPages === 1 ? " page" : " pages");
+      return;
+    }
+    if (d && d.book) { status.textContent = d.book.progress(); return; }
     const text = d ? d.text : "";
     const words = (text.match(/\S+/g) || []).length;
     status.textContent = words.toLocaleString() + " words";
@@ -3202,6 +4285,10 @@ window.__glyphInstallChrome = function () {
     const mod = window.__glyphPlatform === "mac" ? e.metaKey : e.ctrlKey;
     if (!mod) return;
     const k = e.key.toLowerCase();
+    // A PDF has nothing to format, save or show raw, and #md behind it still
+    // holds another note. Open, new and close are all that apply.
+    const cur = active();
+    if (cur && (cur.pdf || cur.book) && !/^[wno]$/.test(k)) return;
     const map = {
       b: "bold", i: "italic", u: "underline", k: "link",
       1: "h1", 2: "h2", 3: "h3",

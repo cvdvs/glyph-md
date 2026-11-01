@@ -295,6 +295,10 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 - (void)presentedItemDidChange {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!self.fileURL || self.isDocumentEdited) return;   // unsaved edits win; NSDocument warns on save
+        // This also fires with nothing changed, so check before re-rendering.
+        NSDate *onDisk = nil;
+        [self.fileURL getResourceValue:&onDisk forKey:NSURLContentModificationDateKey error:NULL];
+        if (!onDisk || [onDisk isEqualToDate:self.fileModificationDate]) return;
         NSError *error = nil;
         [self revertToContentsOfURL:self.fileURL ofType:self.fileType error:&error];
     });
@@ -1175,11 +1179,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     return tpl;
 }
 
-- (void)loadTemplateHTML {
-    self.pageReady = NO;
-    NSURL *base = self.fileURL ? self.fileURL.URLByDeletingLastPathComponent : nil;
-    self.expectedURL = base;
-
++ (NSString *)viewerPage {
     // A fresh nonce every load, so the page's own scripts run and anything a
     // document manages to inject does not — the layer that keeps a future
     // sanitizer bug from mattering. Substituted here rather than in
@@ -1193,8 +1193,14 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     NSString *src = [@"nonce-" stringByAppendingString:nonce];
     tpl = [tpl stringByReplacingOccurrencesOfString:@"/*__CSP_SCRIPT__*/" withString:src];
     tpl = [tpl stringByReplacingOccurrencesOfString:@"/*__CSP_STYLE__*/" withString:src];
+    return tpl;
+}
 
-    [self.webView loadHTMLString:tpl baseURL:base];
+- (void)loadTemplateHTML {
+    self.pageReady = NO;
+    NSURL *base = self.fileURL ? self.fileURL.URLByDeletingLastPathComponent : nil;
+    self.expectedURL = base;
+    [self.webView loadHTMLString:[MarkdownDocument viewerPage] baseURL:base];
 }
 
 - (void)renderMarkdown {

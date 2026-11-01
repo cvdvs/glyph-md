@@ -200,6 +200,11 @@ int main(int argc, const char *argv[]) {
         NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
         [viewMenu addItem:Item(@"Edit", @selector(toggleEditMode:), @"e", 0)];
         [viewMenu addItem:[NSMenuItem separatorItem]];
+        // PDFView answers the first two itself; these stay greyed out in a note.
+        [viewMenu addItem:Item(@"Zoom In", @selector(zoomIn:), @"+", 0)];
+        [viewMenu addItem:Item(@"Zoom Out", @selector(zoomOut:), @"-", 0)];
+        [viewMenu addItem:Item(@"Fit to Window", @selector(zoomToFit:), @"0", 0)];
+        [viewMenu addItem:[NSMenuItem separatorItem]];
 
         NSMenuItem *appearanceItem = [[NSMenuItem alloc] initWithTitle:@"Appearance"
                                                                 action:nil

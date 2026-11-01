@@ -7,4 +7,7 @@
 
 - (void)toggleEditMode:(id)sender;
 
+// The page with a fresh nonce, for anything that shows viewer.html.
++ (NSString *)viewerPage;
+
 @end

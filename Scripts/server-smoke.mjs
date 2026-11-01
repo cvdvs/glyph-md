@@ -4,7 +4,8 @@
 //
 // Starts server/glyph-server.mjs against a temp folder and asserts, over real
 // HTTP, that: the token is required; a path can never read or write outside the
-// served folder (traversal, absolute, symlink-out); only text files are served;
+// served folder (traversal, absolute, symlink-out); only text files and read-only
+// PDFs are served;
 // a legitimate read/write round-trips; a .txt comes back byte for byte; and a
 // stale write is refused. This is the
 // suite that stands between a phone on the wifi and the rest of the disk, so
@@ -33,6 +34,12 @@ await writeFile(path.join(drafts, "a.md"), "# A\n\nbody\n");
 await writeFile(path.join(drafts, "reports", "b.md"), "# B\n");
 await writeFile(path.join(drafts, "notes.txt"), "plain text, served literally\n");
 await writeFile(path.join(drafts, "photo.png"), "not a text file at all\n");
+await writeFile(path.join(drafts, "reports", "c.pdf"), "%PDF-1.4 pretend bytes\n");
+await writeFile(path.join(root, "secret.pdf"), "%PDF-1.4 SECRET OUTSIDE THE ROOT\n");
+await symlink(path.join(root, "secret.pdf"), path.join(drafts, "escape.pdf")).catch(() => {});
+await writeFile(path.join(drafts, "reports", "d.epub"), "PK pretend book bytes\n");
+await writeFile(path.join(root, "secret.epub"), "PK SECRET OUTSIDE THE ROOT\n");
+await symlink(path.join(root, "secret.epub"), path.join(drafts, "escape.epub")).catch(() => {});
 await writeFile(path.join(root, "secret.md"), "SECRET OUTSIDE THE ROOT\n");
 // A symlink inside the root that points OUT of it — the classic escape.
 await symlink(path.join(root, "secret.md"), path.join(drafts, "escape.md")).catch(() => {});
@@ -189,6 +196,99 @@ async function main() {
   // to timingSafeEqual, which throws on unequal buffers and crashed to a 500.
   r = await fetch(`${base}/api/files`, { headers: { Authorization: "Bearer " + "ÿ".repeat(token.length) } });
   ok("a high-byte wrong token is a clean 401, not a 500", r.status === 401);
+
+  // PDFs: readable, listed, sandboxed exactly like a note, and never writable.
+  const pdfBytes = await readFile(path.join(drafts, "reports", "c.pdf"));
+  r = await fetch(`${base}/api/files`, { headers: auth() });
+  const listed = (await r.json()).files.map((f) => f.path);
+  ok("a PDF is listed", listed.includes("reports/c.pdf"));
+  r = await fetch(`${base}/api/pdf?path=reports/c.pdf`);
+  ok("reading a PDF needs the token", r.status === 401);
+  r = await fetch(`${base}/api/pdf?path=reports/c.pdf`, { headers: auth() });
+  ok("a PDF comes back byte for byte", r.status === 200 &&
+     r.headers.get("content-type") === "application/pdf" &&
+     Buffer.from(await r.arrayBuffer()).equals(pdfBytes));
+  r = await fetch(`${base}/api/pdf?path=${encodeURIComponent("../secret.pdf")}`, { headers: auth() });
+  ok("a PDF outside the folder is refused", r.status === 400);
+  r = await fetch(`${base}/api/pdf?path=escape.pdf`, { headers: auth() });
+  ok("a PDF symlink pointing out is refused", r.status === 400);
+  r = await fetch(`${base}/api/pdf?path=a.md`, { headers: auth() });
+  ok("the PDF route only serves PDFs", r.status === 400);
+  r = await fetch(`${base}/api/file?path=reports/c.pdf`, { headers: auth() });
+  ok("a PDF is not read as text", r.status === 400);
+  r = await fetch(`${base}/api/file`, {
+    method: "PUT", headers: auth({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path: "reports/c.pdf", text: "overwritten" }),
+  });
+  ok("a PDF cannot be written", r.status === 400);
+  ok("and it is untouched on disk",
+     (await readFile(path.join(drafts, "reports", "c.pdf"))).equals(pdfBytes));
+
+  // Books: the same rules, and the same reason.
+  const bookBytes = await readFile(path.join(drafts, "reports", "d.epub"));
+  r = await fetch(`${base}/api/files`, { headers: auth() });
+  ok("a book is listed", (await r.json()).files.some((f) => f.path === "reports/d.epub"));
+  r = await fetch(`${base}/api/epub?path=reports/d.epub`);
+  ok("reading a book needs the token", r.status === 401);
+  r = await fetch(`${base}/api/epub?path=reports/d.epub`, { headers: auth() });
+  ok("a book comes back byte for byte", r.status === 200 &&
+     r.headers.get("content-type") === "application/epub+zip" &&
+     Buffer.from(await r.arrayBuffer()).equals(bookBytes));
+  r = await fetch(`${base}/api/epub?path=${encodeURIComponent("../secret.epub")}`, { headers: auth() });
+  ok("a book outside the folder is refused", r.status === 400);
+  r = await fetch(`${base}/api/epub?path=escape.epub`, { headers: auth() });
+  ok("a book symlink pointing out is refused", r.status === 400);
+  r = await fetch(`${base}/api/epub?path=a.md`, { headers: auth() });
+  ok("the book route only serves books", r.status === 400);
+  r = await fetch(`${base}/api/file?path=reports/d.epub`, { headers: auth() });
+  ok("a book is not read as text", r.status === 400);
+  r = await fetch(`${base}/api/file`, { method: "PUT", headers: { ...auth(), "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "reports/d.epub", text: "overwritten" }) });
+  ok("a book cannot be written", r.status === 400 &&
+     (await readFile(path.join(drafts, "reports", "d.epub"))).equals(bookBytes));
+
+  r = await fetch(`${base}/vendor/pdfjs/pdf.min.mjs`);
+  ok("the PDF reader loads without a token, as a script", r.status === 200 &&
+     /javascript/.test(r.headers.get("content-type")) &&
+     r.headers.get("x-content-type-options") === "nosniff");
+  r = await fetch(`${base}/vendor/pdfjs/pdf.worker.min.mjs`);
+  ok("its worker has no network of its own, and may only compile the decoders",
+     r.headers.get("content-security-policy") === "default-src 'none'; script-src 'wasm-unsafe-eval'");
+  r = await fetch(`${base}/vendor/pdfjs/LICENSE`);
+  ok("nothing else in that folder is served", r.status === 404);
+  r = await fetch(`${base}/`);
+  const page = await r.text();
+  const decoders = /__glyphPdfWasm = "([^"]+)"/.exec(page)[1];
+  for (const f of ["jbig2.wasm", "openjpeg.wasm"]) {
+    r = await fetch(`${base}${decoders}${f}`);
+    ok(`the ${f} decoder is served as WebAssembly`, r.status === 200 &&
+       r.headers.get("content-type") === "application/wasm" &&
+       Buffer.from(await r.arrayBuffer()).subarray(0, 4).toString("latin1") === "\0asm");
+  }
+  r = await fetch(`${base}/vendor/pdfjs/wasm/jbig2.wasm`);
+  ok("a decoder is only served under its hashed address", r.status === 404);
+  const csp = /Content-Security-Policy" content="([^"]+)"/.exec(page)[1];
+  ok("the page may load the reader and its worker from here",
+     /script-src 'self' /.test(csp) && /worker-src 'self'/.test(csp));
+  ok("and still runs no inline or evaluated code outside its pinned hashes",
+     !/unsafe-inline|unsafe-eval/.test(csp));
+
+  // The phone's error reports. They land in a log, so the rule about tokens in
+  // logs applies to them: a stack trace can carry the page's address.
+  r = await fetch(`${base}/api/log`, { method: "POST", body: "{}" });
+  ok("reporting to the log needs the token", r.status === 401);
+  r = await fetch(`${base}/api/log`, { method: "POST", headers: auth(),
+    body: `first\nsecond \u001b[31m http://x/#token=${token} end` });
+  ok("a report is accepted", r.status === 200);
+  await sleep(50);
+  const reported = out.split("\n").filter((l) => l.startsWith("glyph-phone:"));
+  ok("a report lands on one line of plain text",
+     reported.length === 1 && /first second .*end$/.test(reported[0]) && !out.includes("\u001b"));
+  ok("a report never writes the token to the log", !out.includes(token));
+  // The server hangs up on it, the same way it does on an oversized note.
+  r = await fetch(`${base}/api/log`, { method: "POST", headers: auth(), body: "x".repeat(20000) })
+    .catch(() => null);
+  ok("a report cannot fill the log", !r && !out.includes("x".repeat(9000)));
 
   // Stale write (changed on disk since load) is refused rather than clobbering.
   r = await fetch(`${base}/api/file?path=reports/b.md`, { headers: auth() });
