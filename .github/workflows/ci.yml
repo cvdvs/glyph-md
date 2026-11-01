@@ -55,7 +55,7 @@ jobs:
   # identically under WKWebView, including byte-identical markdown output.
   macos:
     name: macOS app — build + WKWebView suite
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
