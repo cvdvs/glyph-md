@@ -14,6 +14,21 @@ typedef NS_ENUM(NSInteger, GlyphLinkAction) {
     GlyphLinkOpenAsDocument,
 };
 
+static BOOL GlyphIsObsidianOpen(NSURL *url) {
+    NSString *s = url.absoluteString;
+    NSString *prefix = @"obsidian://open?";
+    if (![s.lowercaseString hasPrefix:prefix]) return NO;
+    NSString *query = [s substringFromIndex:prefix.length];
+    if ([query containsString:@"#"]) return NO;
+    NSArray *allowed = @[@"vault", @"file", @"path", @"panetype"];
+    for (NSString *pair in [query componentsSeparatedByString:@"&"]) {
+        NSString *key = [[pair componentsSeparatedByString:@"="].firstObject
+                            stringByRemovingPercentEncoding];
+        if (!key || ![allowed containsObject:key.lowercaseString]) return NO;
+    }
+    return YES;
+}
+
 static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     if (!url) return GlyphLinkIgnore;
     NSString *scheme = url.scheme.lowercaseString;
@@ -21,6 +36,9 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"] ||
         [scheme isEqualToString:@"mailto"]) {
         return GlyphLinkOpenExternally;
+    }
+    if ([scheme isEqualToString:@"obsidian"]) {
+        return GlyphIsObsidianOpen(url) ? GlyphLinkOpenExternally : GlyphLinkIgnore;
     }
     if ([scheme isEqualToString:@"file"]) {
         static NSSet *markdown;
@@ -64,6 +82,18 @@ int main(int argc, const char *argv[]) {
         Check("link to a missing note", missing, GlyphLinkIgnore);
         Check("javascript: url", @"javascript:alert(1)", GlyphLinkIgnore);
         Check("custom app scheme", @"someapp://do-a-thing", GlyphLinkIgnore);
+        Check("Obsidian link that opens a note",
+              @"obsidian://open?vault=Notes&file=wiki/methods/A%20Note", GlyphLinkOpenExternally);
+        Check("Obsidian link that writes a note",
+              @"obsidian://new?vault=a&name=b&content=c&overwrite=true", GlyphLinkIgnore);
+        Check("Obsidian open with a callback address",
+              @"obsidian://open?vault=a&file=b&x-success=https://evil.example", GlyphLinkIgnore);
+        Check("Obsidian open, callback key percent-encoded",
+              @"obsidian://open?vault=a&x%2Dsuccess=https://evil.example", GlyphLinkIgnore);
+        Check("Obsidian plugin action",
+              @"obsidian://advanced-uri?vault=a&commandid=b", GlyphLinkIgnore);
+        Check("Obsidian open with a path after it",
+              @"obsidian://open/../new?vault=a", GlyphLinkIgnore);
         Check("directory with .md name", [NSURL fileURLWithPath:dir].absoluteString, GlyphLinkIgnore);
         Check("nil", nil, GlyphLinkIgnore);
         printf("\n%s\n", fails ? "FAILURES" : "all pass");

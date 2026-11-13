@@ -43,6 +43,13 @@
     return h && badScheme.test(h.replace(/[\u0000-\u0020]/g, ""));
   });
 
+  // An Obsidian link may open a note and nothing more. One that writes a note,
+  // or carries a callback that would send the note's name and path to an
+  // address, must lose its href.
+  const hrefs = all.map((el) => (el.getAttribute && el.getAttribute("href")) || "");
+  r.noObsidianWrite = !hrefs.some((h) => /^obsidian:\/\/new/i.test(h));
+  r.noObsidianCallback = !hrefs.some((h) => /^obsidian:/i.test(h) && /x-success/i.test(h));
+
   // No silent network calls: a remote image is a tracking beacon that fires on open.
   r.noRemoteImages = ![...md.querySelectorAll("img")].some((i) => {
     const s = i.getAttribute("src") || "";

@@ -40,6 +40,9 @@ soft wrap B.
 
 Inline code holding a backtick: ``FID-12 a`b`` must round-trip, not downgrade.
 
+FID-13 a link to a note in Obsidian keeps its address:
+**[Field Notes](obsidian://open?vault=Notes&file=wiki/concepts/Field%20Notes)**
+
 ````
 ```
 FID-11 a triple-backtick example lives inside this block and must stay one block

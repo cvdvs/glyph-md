@@ -151,6 +151,26 @@ typedef NS_ENUM(NSInteger, GlyphLinkAction) {
     GlyphLinkOpenAsDocument,
 };
 
+// A link that opens a note in Obsidian, and nothing else: the open action with
+// only its own parameters. The other actions write notes (new, daily, plugin
+// handlers), and x-success would send the note's name and path to any address.
+// The page keeps only these hrefs in the first place (isObsidianOpen in
+// viewer.html); this is the same rule, applied again before NSWorkspace sees it.
+static BOOL GlyphIsObsidianOpen(NSURL *url) {
+    NSString *s = url.absoluteString;
+    NSString *prefix = @"obsidian://open?";
+    if (![s.lowercaseString hasPrefix:prefix]) return NO;
+    NSString *query = [s substringFromIndex:prefix.length];
+    if ([query containsString:@"#"]) return NO;
+    NSArray *allowed = @[@"vault", @"file", @"path", @"panetype"];
+    for (NSString *pair in [query componentsSeparatedByString:@"&"]) {
+        NSString *key = [[pair componentsSeparatedByString:@"="].firstObject
+                            stringByRemovingPercentEncoding];
+        if (!key || ![allowed containsObject:key.lowercaseString]) return NO;
+    }
+    return YES;
+}
+
 static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     if (!url) return GlyphLinkIgnore;
     NSString *scheme = url.scheme.lowercaseString;
@@ -158,6 +178,9 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"] ||
         [scheme isEqualToString:@"mailto"]) {
         return GlyphLinkOpenExternally;
+    }
+    if ([scheme isEqualToString:@"obsidian"]) {
+        return GlyphIsObsidianOpen(url) ? GlyphLinkOpenExternally : GlyphLinkIgnore;
     }
     if ([scheme isEqualToString:@"file"]) {
         static NSSet *markdown;

@@ -1208,7 +1208,24 @@ function safeURL(value, forImage) {
   }
   // Allowlist, not deny-list: an unknown scheme is refused rather than passed
   // through, so tomorrow's scheme cannot become today's hole.
+  if (name === "obsidian") return isObsidianOpen(v) ? v : null;
   return (name === "http" || name === "https" || name === "mailto") ? v : null;
+}
+
+// A link that opens a note in Obsidian, the way its "Copy Obsidian URL" writes
+// it: obsidian://open?vault=…&file=…. Only the open action, and only its own
+// parameters. The other actions write notes (new, daily, plugin handlers), and
+// x-success would send the note's name and path to any address. The app checks
+// the same rule again before handing one to the system (GlyphIsObsidianOpen).
+function isObsidianOpen(v) {
+  const m = /^obsidian:\/\/open\?([^#]*)$/i.exec(v);
+  if (!m) return false;
+  const allowed = ["vault", "file", "path", "panetype"];
+  return m[1].split("&").every((pair) => {
+    let key;
+    try { key = decodeURIComponent(pair.split("=")[0]); } catch (_) { return false; }
+    return allowed.includes(key.toLowerCase());
+  });
 }
 
 // data-raw is emitted by the wikilink renderer and written back to the file

