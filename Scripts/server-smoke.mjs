@@ -679,7 +679,9 @@ async function main() {
   r = await post("trash", { path: "lib/ideas/renamed note.md" });
   const id3 = (await r.json()).undo;
   await rm(path.join(trashDir, "renamed note.md"));
-  await writeFile(path.join(trashDir, "renamed note.md"), "# Put there afterwards\n");
+  // The same size as the original ("# Draft"), so only its times give it away:
+  // on Linux it may well get the freed inode back.
+  await writeFile(path.join(trashDir, "renamed note.md"), "# Swap!\n");
   r = await post("untrash", { undo: id3 });
   ok("nor brings back something swapped in under its name", typeof id3 === "string" && r.status === 404 &&
      !there("ideas", "renamed note.md"));

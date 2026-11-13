@@ -434,6 +434,7 @@ async function movePins(from, to, dir) {
 // the Mac's business; letting a request pull an arbitrary file out of it into
 // the served folder would make it readable from the phone.
 const UNDO_MS = 15 * 60 * 1000;
+const trashPrint = (st) => [st.dev, st.ino, st.size, st.mtimeMs, st.birthtimeMs].join(":");
 const trashed = new Map();
 function rememberTrashed(item) {
   const now = Date.now();
@@ -1066,8 +1067,10 @@ const server = createServer(async (req, res) => {
           } catch {
             return json(res, 404, { error: "no longer in the trash" });
           }
-          // The very same item, not something put in its place since.
-          if (st.isSymbolicLink() || st.ino !== item.ino || st.dev !== item.dev) {
+          // The very same item, not something put in its place since. The inode
+          // alone is not enough: Linux hands a freed one straight to the next
+          // file, so size and times have to match too.
+          if (st.isSymbolicLink() || trashPrint(st) !== item.print) {
             return json(res, 404, { error: "no longer in the trash" });
           }
           if (!intoFolder(path.dirname(item.abs))) return json(res, 409, { error: "its folder is gone" });
@@ -1164,7 +1167,7 @@ const server = createServer(async (req, res) => {
         let undo = null;
         try {
           const st = await lstat(dest);
-          undo = rememberTrashed({ dest, abs: from.abs, ino: st.ino, dev: st.dev, pins: gone });
+          undo = rememberTrashed({ dest, abs: from.abs, print: trashPrint(st), pins: gone });
         } catch { /* it is in the Trash; only Undo is lost */ }
         return json(res, 200, { trashed: true, undo });
       }
