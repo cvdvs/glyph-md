@@ -776,7 +776,8 @@ function startWorker() {
         // It passed the import check and now fails it: off until the next look.
         if (msg.fatal && !WHISPER_CMD) { voice.available = false; voice.checkedAt = Date.now(); }
       } else if (worker.job && msg.id === worker.job.id) {
-        worker.job.done(null, msg);
+        if ("heard" in msg && !("segments" in msg) && !("error" in msg)) worker.job.heard(msg.heard);
+        else worker.job.done(null, msg);
       }
     }
   });
@@ -800,6 +801,17 @@ function startWorker() {
 function runJob(file, language) {
   return new Promise((resolve, reject) => {
     const proc = startWorker();
+    let timer;
+    // A stuck job cannot be interrupted, so the whole worker goes and the next
+    // job starts a fresh one. Detached first, so nothing new is sent to it.
+    const arm = (ms) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (worker.proc === proc) worker.proc = null;
+        job.done(Object.assign(new Error("timeout"), { code: "timeout" }));
+        proc.kill("SIGKILL");
+      }, ms);
+    };
     const job = {
       id: worker.nextId++,
       done(err, msg) {
@@ -809,14 +821,15 @@ function runJob(file, language) {
         armIdle();
         if (err) reject(err); else resolve(msg);
       },
+      // The worker says how long the recording is once it has opened it. Auto
+      // on the full model takes about half the recording's length, so a long
+      // note gets that much more time, and a stuck worker is still caught.
+      heard(seconds) {
+        if (worker.job !== job || !Number.isFinite(seconds) || seconds <= 0) return;
+        arm(VOICE_TIMEOUT_MS + Math.min(seconds, 3600) * 1000);
+      },
     };
-    // A stuck job cannot be interrupted, so the whole worker goes and the next
-    // job starts a fresh one. Detached first, so nothing new is sent to it.
-    const timer = setTimeout(() => {
-      if (worker.proc === proc) worker.proc = null;
-      job.done(Object.assign(new Error("timeout"), { code: "timeout" }));
-      proc.kill("SIGKILL");
-    }, VOICE_TIMEOUT_MS);
+    arm(VOICE_TIMEOUT_MS);
     worker.job = job;
     clearTimeout(worker.idle);
     proc.stdin.write(JSON.stringify({ id: job.id, path: file, language }) + "\n");
@@ -998,7 +1011,7 @@ const server = createServer(async (req, res) => {
         const language = typeof msg.language === "string" && /^[a-z]{2,3}$/i.test(msg.language)
           ? msg.language.toLowerCase() : null;
         const kept = await keepSample(audio, ext, { asked: lang, language, seconds, text,
-          model: process.env.GLYPH_WHISPER_MODEL || "mlx-community/whisper-large-v3-turbo" });
+          model: process.env.GLYPH_WHISPER_MODEL || "mlx-community/whisper-large-v3-mlx" });
         console.log(`glyph-voice: ${seconds}s of audio, ${kb} KB, ` +
           `${text ? "transcribed" : "no speech"} in ${((Date.now() - t0) / 1000).toFixed(1)}s` +
           (kept ? ", kept for comparison" : ""));

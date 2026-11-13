@@ -8,8 +8,10 @@ how long it took. The person who spoke judges, since only they know what was sai
   python3 Scripts/voice-compare.py [samples dir] [report.html]
 
 Setups:
-  Glyph now           large-v3-turbo, as the phone server runs it
-  large-v3            the full model (the turbo cuts its decoder from 32 layers to 4)
+  Glyph now           server/whisper-worker.py itself: large-v3, and on Auto the
+                      language chosen per stretch of speech
+  large-v3-turbo      the model Glyph used before (its decoder cut from 32 layers to 4)
+  large-v3            the full model, Auto choosing one language per recording
   large-v3 + words    the same, with ~/.config/glyph/voice-words.txt as a hint
   OpenAI whisper-1    OpenAI's hosted Whisper (large-v2)
   OpenAI gpt-4o       gpt-4o-transcribe, with the word list as its prompt
@@ -93,6 +95,17 @@ def local(path, model_path, asked, prompt_terms):
     return " ".join(s["text"].strip() for s in kept).strip(), lang
 
 
+# What the phone server does now: the worker's own code, so this row is Glyph.
+def glyph(path, model_path, asked):
+    audio = load_audio(path)
+    pcm = np.array(audio)
+    if worker.loudest_db(pcm, np) < worker.SILENCE_DBFS:
+        return "", None
+    lang = asked if asked in ("en", "ro") else None
+    segments, mostly = worker.transcribe(audio, pcm, lang, model_path, mx, np)
+    return " ".join(seg["text"].strip() for seg in segments).strip(), mostly
+
+
 def openai(path, model, asked, prompt_terms, key):
     fields = {"model": model, "response_format": "json"}
     if asked in ("en", "ro"):
@@ -132,8 +145,9 @@ def main():
     except OSError:
         pass
 
-    setups = [("Glyph now (large-v3-turbo)", "local", TURBO, False),
-              ("large-v3", "local", LARGE, False)]
+    setups = [("Glyph now (large-v3, Auto by stretch of speech)", "glyph", worker.MODEL, False),
+              ("large-v3-turbo (Glyph before)", "local", TURBO, False),
+              ("large-v3, one language per recording", "local", LARGE, False)]
     if terms:
         setups.append(("large-v3 + your words", "local", LARGE, True))
     if key:
@@ -156,6 +170,9 @@ def main():
             t0 = time.time()
             if kind == "local":
                 text, lang = local(path, model, asked, terms if use_words else None)
+                note = lang or ""
+            elif kind == "glyph":
+                text, lang = glyph(path, model, asked)
                 note = lang or ""
             else:
                 text, problem = openai(path, model, asked, terms if use_words else None, key)

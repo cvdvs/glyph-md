@@ -781,6 +781,14 @@ async function main() {
   ok("and the next job starts a fresh worker", r.status === 200);
   r = await say("CASE:hang");
   ok("a job that never finishes is a 504", r.status === 504);
+  t0 = Date.now();
+  r = await say("CASE:long");
+  ok("a long recording gets more time, by its own length", r.status === 200 && Date.now() - t0 >= 2400,
+     `${r.status} after ${Date.now() - t0}ms`);
+  t0 = Date.now();
+  r = await say("CASE:longhang");
+  ok("but a worker stuck on it is still stopped", r.status === 504 && Date.now() - t0 < 4000,
+     `${r.status} after ${Date.now() - t0}ms`);
   r = await say("CASE:pause");
   ok("and the next job works again", r.status === 200);
   const both = await Promise.all([say("CASE:pause"), say("CASE:romanian")]);

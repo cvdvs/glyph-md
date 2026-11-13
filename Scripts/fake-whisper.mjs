@@ -19,6 +19,8 @@
 //   CASE:error     replies with an error (500)
 //   CASE:crash     exits without replying (500, and the next job gets a new worker)
 //   CASE:hang      never replies (504 after GLYPH_VOICE_TIMEOUT_MS)
+//   CASE:long      says it heard 3 s, then answers after 2.5 s (past a 1.5 s timeout)
+//   CASE:longhang  says it heard 1 s, then never replies (504 a second later than hang)
 //
 // If FAKE_WHISPER_LOG names a file, each job appends {path, language, mode} to it
 // as a JSON line, so a test can check the temp file's permissions and name and
@@ -83,6 +85,12 @@ function handle(job) {
   const name = body.startsWith("CASE:") ? body.slice(5) : "";
   if (name === "crash") process.exit(3);
   if (name === "hang") return;
+  if (name === "longhang") return reply({ id: job.id, heard: 1 });
+  if (name === "long") {
+    reply({ id: job.id, heard: 3 });
+    setTimeout(() => reply({ id: job.id, language: "en", duration: 3, segments: CASES.lang }), 2500);
+    return;
+  }
   if (name === "error" || !(name in CASES)) return reply({ id: job.id, error: "FakeError" });
   const segments = CASES[name];
   const language = name === "lang" ? job.language : name === "romanian" ? "ro" : "en";

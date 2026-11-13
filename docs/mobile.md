@@ -92,14 +92,17 @@ recording goes to the Mac, which turns it into text with Whisper
 (`mlx_whisper`, running on the Mac's own chip), so nothing leaves your devices.
 A pause of a second and a half or more starts a new paragraph, and every
 paragraph gets a capital letter and a full stop. English and Romanian are told
-apart on their own, or you can pick one, which is a little faster. If nothing
-was said it says so, rather than making words up.
+apart on their own, sentence by sentence, so a note that switches between them
+keeps both; or you can pick one, which is about twice as fast. If nothing was
+said it says so, rather than making words up.
 
 What the Mac needs, once:
 
 - Python with `mlx_whisper` installed, and `ffmpeg` (`brew install ffmpeg`).
-- The model already downloaded: `mlx-community/whisper-large-v3-turbo`, about
-  1.5 GB, in the usual Hugging Face cache. The server never downloads anything.
+- The model already downloaded: `mlx-community/whisper-large-v3-mlx`, about
+  3 GB, in the usual Hugging Face cache. The server never downloads anything.
+  (It used `whisper-large-v3-turbo` before, which is half the size and quicker
+  but heard her own recordings clearly worse; `GLYPH_WHISPER_MODEL` brings it back.)
 
 The server looks for Python in this order: `GLYPH_PYTHON`, the first line of
 `~/.config/glyph/python`, `python3` on the PATH, then `/opt/homebrew/bin` and
@@ -107,10 +110,12 @@ The server looks for Python in this order: `GLYPH_PYTHON`, the first line of
 can, voice is simply switched off and the phone does not offer it.
 `GLYPH_WHISPER_MODEL` picks a different model.
 
-Measured on the Mac mini: about 4 to 6 seconds for a 7-second note when the
-model has to load first, about 2 seconds after that, and 14 seconds for 49
-seconds of speech. One note is transcribed at a time, and a single note is
-given two minutes, which covers roughly six minutes of talking. The model stays
+Measured on the Mac mini (M4) with the full model: a few seconds for a short
+note in a chosen language, and 20 seconds for 2 minutes of speech. Auto takes
+roughly half as long as the recording (6 s for 14 s, 14 s for 29 s, 50 s for
+2 minutes), because it listens to each stretch on its own to decide its
+language. One note is transcribed at a time. A note gets two minutes plus its
+own length, so a stuck job is still stopped and a long note is not. The model stays
 loaded for 15 minutes after the last note, then quits to give its memory back.
 
 The recording is saved to a private temporary file and deleted as soon as it
