@@ -280,7 +280,9 @@ async function runInChrome() {
   browser = spawn(chromePath, ["--headless=new", "--disable-gpu", "--no-sandbox", "--no-first-run",
     "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank"], { stdio: "ignore" });
   let wsUrl = null;
-  for (let i = 0; i < 100 && !wsUrl; i++) {
+  // A minute, not ten seconds: on GitHub's November 2026 Ubuntu image Chrome's
+  // first start took nine seconds before it printed anything at all.
+  for (let i = 0; i < 600 && !wsUrl; i++) {
     await sleep(100);
     try {
       const [p, t] = (await readFile(path.join(profile, "DevToolsActivePort"), "utf8")).split("\n");

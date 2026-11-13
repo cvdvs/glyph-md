@@ -138,7 +138,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The port lands in DevToolsActivePort once the browser is listening.
 let wsUrl = null;
-for (let i = 0; i < 100 && !wsUrl; i++) {
+// A minute, not ten seconds: on GitHub's November 2026 Ubuntu image Chrome's
+// first start took nine seconds before it printed anything at all.
+for (let i = 0; i < 600 && !wsUrl; i++) {
   await sleep(100);
   try {
     const portFile = await readFile(path.join(profile, "DevToolsActivePort"), "utf8");
