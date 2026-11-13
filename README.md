@@ -26,6 +26,21 @@ One interface everywhere. `Resources/viewer.html` *is* the app — the renderer,
 - **PDFs too, on the Mac.** File → Open, Open With → Glyph, or drop one on the Dock icon: it opens as a tab beside your notes, read-only, through Apple's own PDFKit, so scans, text selection and links all work. Password-protected files ask for the password. Glyph doesn't take over double-clicking a PDF.
 - **And books.** EPUBs open the same way: a chapter at a time, in your own type, with Contents, footnotes, and an **Aa** panel for size, font, spacing, margins, alignment and page color. Your place in each book is remembered. Copy-protected books aren't supported.
 
+With the phone server running, the same folders open as a Notes window on the Mac and as pages on the phone:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-notes-mac-dark.png">
+  <img src="docs/screenshot-notes-mac-light.png" width="100%" alt="The Notes window on a Mac: folders on the left, a folder's notes with pinned ones first, and a travel note open on the right">
+</picture>
+
+<p>
+  <img src="docs/screenshot-phone-folders.png" width="32%" alt="A folder on the phone: subfolders, pinned notes, and notes grouped by day">
+  <img src="docs/screenshot-phone-note.png" width="32%" alt="A recipe open on the phone, with the formatting tools at the bottom">
+  <img src="docs/screenshot-phone-voice.png" width="32%" alt="Dictation on the phone: the recorder over a note, choosing Auto, English or Romanian">
+</p>
+
+<sub>Screenshots use a made-up folder of notes.</sub>
+
 No Electron. The whole app is a few small source files; it compiles in seconds and launches instantly.
 
 ## Install
