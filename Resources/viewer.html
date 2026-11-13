@@ -4535,15 +4535,16 @@ window.__glyphInstallChrome = function () {
   searchInput.addEventListener("input", () => { renderLibrary(); library.scrollTop = 0; });
   searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") searchInput.blur(); });
 
-  async function openFromServer(rel) {
+  // Answers whether the note opened, for glyphOpenNote below.
+  async function openFromServer(rel, quiet) {
     // Already open? Just show it.
     const existing = docs.find((d) => d.serverPath === rel);
-    if (existing) { activate(existing.id); closeLibrary(); return; }
+    if (existing) { activate(existing.id); closeLibrary(); return true; }
     if (isPdfName(rel)) { openPdf(rel); return; }
     if (isBookName(rel)) { openBook(rel); return; }
     try {
       const res = await glyphApi("/api/file?path=" + encodeURIComponent(rel));
-      if (!res.ok) { flash("Could not open that file"); return; }
+      if (!res.ok) { if (!quiet) flash("Could not open that file"); return false; }
       const data = await res.json();
       const name = rel.indexOf("/") >= 0 ? rel.slice(rel.lastIndexOf("/") + 1) : rel;
       const d = openDoc(name, data.text, null);   // openDoc sets .plain from the name
@@ -4564,10 +4565,28 @@ window.__glyphInstallChrome = function () {
       }
       paintTabs();
       closeLibrary();
+      return true;
     } catch (e) {
-      flash("Offline — the computer is not reachable");
+      if (!quiet) flash("Offline — the computer is not reachable");
+      return false;
     }
   }
+  // The Mac app opens a note from Finder here when it lives in the served folder
+  // (Sources/GlyphLibrary.m), with the list showing its folder, as if it had been
+  // clicked. Only a note the list shows: a hidden file or one in a skipped folder
+  // stays the Mac's. The answer matters, since on a no the Mac opens the file in
+  // a window of its own, so this never puts up an error of its own.
+  window.glyphOpenNote = async (rel) => {
+    if (!serverHost() || typeof rel !== "string" || !rel || isPdfName(rel) || isBookName(rel)) return false;
+    const listed = () => serverFiles.find((f) => f.path === rel) ||
+      serverFiles.find((f) => f.path.toLowerCase() === rel.toLowerCase());   // the Mac's disk ignores case
+    if (!listed()) await loadServerList();
+    const f = listed();
+    if (!f) return false;
+    const opened = await openFromServer(f.path, true);
+    if (opened && wide()) { libraryPath = folderOf(f.path); searchInput.value = ""; renderLibrary(); }
+    return !!opened;
+  };
 
   // A PDF is read through PDF.js rather than the browser's own viewer, because
   // Safari shows only the first page of a PDF embedded in a page. It is a tab

@@ -1,7 +1,47 @@
 #import <Cocoa/Cocoa.h>
 #import "GlyphLibrary.h"
+#import "MarkdownDocument.h"
 
 static NSString * const kGlyphAppearanceKey = @"GlyphAppearance";
+
+// A note in the folder the phone server serves opens in the Notes window, beside
+// its folder, the same as clicking it there. Anything else (a note from anywhere
+// else, a PDF, a book), or a note the Notes page cannot open, gets a window of
+// its own as before, and nothing is ever copied into the served folder.
+@interface GlyphDocumentController : NSDocumentController
+@end
+
+@implementation GlyphDocumentController
+
+- (void)openDocumentWithContentsOfURL:(NSURL *)url
+                              display:(BOOL)display
+                    completionHandler:(void (^)(NSDocument *, BOOL, NSError *))completionHandler {
+    NSString *served = nil;
+    // Already open in a window of its own: that window is where it is.
+    if (display && ![self documentForURL:url]) {
+        NSString *type = [self typeForContentsOfURL:url error:NULL];
+        if (type && [self documentClassForType:type] == [MarkdownDocument class]) {
+            served = [GlyphLibrary servedPathForURL:url];
+        }
+    }
+    if (!served) {
+        [super openDocumentWithContentsOfURL:url display:display completionHandler:completionHandler];
+        return;
+    }
+    [[GlyphLibrary shared] openServedPath:served completion:^(BOOL opened) {
+        if (!opened) {
+            [super openDocumentWithContentsOfURL:url display:display completionHandler:completionHandler];
+            return;
+        }
+        // Open Recent still lists it, and choosing it there comes back here.
+        [self noteNewRecentDocumentURL:url];
+        // Opened, just not as a document of this controller's. A cancel is the
+        // one error AppKit never puts in front of the person.
+        completionHandler(nil, NO, [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil]);
+    }];
+}
+
+@end
 
 @interface GlyphAppDelegate : NSObject <NSApplicationDelegate>
 @end
@@ -89,6 +129,9 @@ int main(int argc, const char *argv[]) {
         static GlyphAppDelegate *delegate;
         delegate = [[GlyphAppDelegate alloc] init];
         app.delegate = delegate;
+        // The first document controller made becomes the shared one, so it has
+        // to exist before anything asks for it.
+        (void)[[GlyphDocumentController alloc] init];
 
         NSMenu *menubar = [[NSMenu alloc] init];
 

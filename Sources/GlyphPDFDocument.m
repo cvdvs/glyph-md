@@ -7,12 +7,12 @@
 //
 // It is a separate document class rather than a mode of MarkdownDocument because
 // that class is built around a text it can save. Nothing here can write.
-@interface GlyphPDFDocument () <PDFViewDelegate, NSToolbarDelegate>
+@interface GlyphPDFDocument () <PDFViewDelegate>
 @property (nonatomic, strong) PDFDocument *pdf;
 @property (nonatomic, strong) PDFView *pdfView;
 @end
 
-NSWindow *GlyphReaderWindow(id<NSToolbarDelegate> toolbarDelegate) {
+NSWindow *GlyphReaderWindow(void) {
     NSWindow *window = [[NSWindow alloc]
         initWithContentRect:NSMakeRect(0, 0, 940, 800)
                   styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -25,16 +25,12 @@ NSWindow *GlyphReaderWindow(id<NSToolbarDelegate> toolbarDelegate) {
     // The same group as the notes, so it opens as a tab beside them.
     window.tabbingIdentifier = @"glyph";
     window.tabbingMode = NSWindowTabbingModePreferred;
-    window.toolbarStyle = NSWindowToolbarStyleUnified;
+    // The same plain strip a note's window has, so switching between the two
+    // tabs does not make the window jump. A PDF or a book has no heading to
+    // name it, so it keeps its title.
+    window.titlebarAppearsTransparent = YES;
+    window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
     [window center];
-
-    // Empty, but it holds the title bar at the height a note's has, so switching
-    // between the two tabs does not make the window jump.
-    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"glyph-reader-toolbar"];
-    toolbar.delegate = toolbarDelegate;
-    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
-    toolbar.allowsUserCustomization = NO;
-    window.toolbar = toolbar;
     return window;
 }
 
@@ -92,7 +88,7 @@ void GlyphOpenWebLink(NSURL *url) {
 }
 
 - (void)makeWindowControllers {
-    NSWindow *window = GlyphReaderWindow(self);
+    NSWindow *window = GlyphReaderWindow();
     PDFView *view = [[PDFView alloc] initWithFrame:window.contentView.bounds];
     view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     view.backgroundColor = GlyphBG();
@@ -115,9 +111,6 @@ void GlyphOpenWebLink(NSURL *url) {
     self.pdfView.window.subtitle = self.pdf.isLocked ? @"Locked" :
         [NSString stringWithFormat:@"%lu %@", (unsigned long)n, n == 1 ? @"page" : @"pages"];
 }
-
-- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar { return @[]; }
-- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar { return @[]; }
 
 // A PDF is untrusted input like a note. Without this delegate method PDFKit hands
 // every link to the system itself.

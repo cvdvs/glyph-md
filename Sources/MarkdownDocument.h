@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 
-@interface MarkdownDocument : NSDocument <WKNavigationDelegate, NSTextViewDelegate, NSToolbarDelegate>
+@interface MarkdownDocument : NSDocument <WKNavigationDelegate, NSTextViewDelegate>
 
 @property (nonatomic, copy) NSString *text;
 

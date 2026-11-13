@@ -6,5 +6,5 @@
 
 // What the read-only documents share: a window that joins the notes as a tab, and
 // the rule for links inside something untrusted.
-NSWindow *GlyphReaderWindow(id<NSToolbarDelegate> toolbarDelegate);
+NSWindow *GlyphReaderWindow(void);
 void GlyphOpenWebLink(NSURL *url);

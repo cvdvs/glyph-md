@@ -10,6 +10,7 @@
 #import <PDFKit/PDFKit.h>
 #import <WebKit/WebKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 static int gFails = 0;
 static NSInteger gOpened = 0;
@@ -126,6 +127,91 @@ static void readOnlyNote(NSString *dir) {
     check("a note that really changes on disk reloads",
           [[live valueForKey:@"text"] isEqualToString:@"# After\n"], [live valueForKey:@"text"]);
     [live close];
+}
+
+// The file window looks like the Notes window: no title and no toolbar, its
+// tools in rounded groups, and no tab bar for a lone note. A narrow window drops
+// whole groups from the right, keeping undo and the edit toggle.
+static void fileWindow(NSString *dir) {
+    // As Glyph left it before: the tab bar forced on, which macOS remembers.
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"NSWindowTabbingShoudShowTabBarKey-glyph"];
+    NSString *path = [dir stringByAppendingPathComponent:@"look.md"];
+    [@"# Look\n\nA note.\n" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    NSDocument *doc = openDoc([NSURL fileURLWithPath:path], NULL);
+    NSWindow *w = doc.windowControllers.firstObject.window;
+    pump(1.5, nil);
+    check("the window has no toolbar", w && !w.toolbar, @"");
+    check("and shows no title, as the Notes window does",
+          w.titleVisibility == NSWindowTitleHidden && w.titlebarAppearsTransparent, @"");
+    check("its name is still the window's title", [w.title isEqualToString:@"look.md"], w.title);
+    check("a lone note has no tab bar", !w.tabGroup.tabBarVisible, @"");
+
+    NSString *other = [dir stringByAppendingPathComponent:@"other.md"];
+    [@"# Other\n" writeToFile:other atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    NSDocument *second = openDoc([NSURL fileURLWithPath:other], NULL);
+    pump(1, nil);
+    check("a second note opens as a tab, and the tab bar shows",
+          w.tabGroup.windows.count == 2 && w.tabGroup.tabBarVisible,
+          [NSString stringWithFormat:@"%lu tabs", (unsigned long)w.tabGroup.windows.count]);
+    [second close];
+    pump(1, nil);
+
+    NSView *bar = [doc valueForKey:@"formatBar"];
+    NSStackView *stack = (NSStackView *)bar.subviews.firstObject;
+    NSArray *groups = [stack.views copy];
+    pump(0.5, nil);
+    check("five groups of tools, all showing in a normal window",
+          groups.count == 5 && stack.detachedViews.count == 0,
+          [NSString stringWithFormat:@"%lu groups, %lu hidden", (unsigned long)groups.count,
+                                     (unsigned long)stack.detachedViews.count]);
+    NSRect f = w.frame;
+    [w setFrame:NSMakeRect(f.origin.x, f.origin.y, 560, f.size.height) display:YES];
+    [w layoutIfNeeded];
+    pump(0.5, nil);
+    NSArray *hidden = stack.detachedViews;
+    BOOL keptEnds = ![hidden containsObject:groups.firstObject] && ![hidden containsObject:groups.lastObject];
+    check("a narrow window hides groups, not undo or the edit toggle", hidden.count > 0 && keptEnds,
+          [NSString stringWithFormat:@"%lu hidden at 560", (unsigned long)hidden.count]);
+    BOOL fits = YES;
+    for (NSView *g in stack.views) {
+        if ([hidden containsObject:g]) continue;
+        NSRect r = [g convertRect:g.bounds toView:bar];
+        if (NSMinX(r) < 0 || NSMaxX(r) > NSWidth(bar.bounds) + 0.5) fits = NO;
+    }
+    check("and what shows fits inside it", fits, @"");
+    [w setFrame:f display:YES];
+    [doc close];
+    pump(0.5, nil);
+}
+
+// Whether a file opened from Finder belongs in the Notes window: inside the
+// served folder, whatever the case, and not in a folder that merely starts the same.
+static void servedFolder(NSString *dir) {
+    Class lib = NSClassFromString(@"GlyphLibrary");
+    NSString *root = [dir stringByAppendingPathComponent:@"Writing"];
+    [NSFileManager.defaultManager createDirectoryAtPath:[root stringByAppendingPathComponent:@"Work"]
+                            withIntermediateDirectories:YES attributes:nil error:NULL];
+    [@"# Plan\n" writeToFile:[root stringByAppendingPathComponent:@"Work/plan.md"] atomically:YES
+                  encoding:NSUTF8StringEncoding error:NULL];
+    NSString *(^at)(NSString *) = ^NSString *(NSString *p) {
+        return ((NSString *(*)(id, SEL, NSURL *, NSString *))objc_msgSend)(
+            lib, @selector(pathOf:inFolder:), [NSURL fileURLWithPath:p], root);
+    };
+    NSString *r = at([root stringByAppendingPathComponent:@"Work/plan.md"]);
+    check("a note inside the served folder is found there", [r isEqualToString:@"Work/plan.md"], r);
+    r = at([[dir stringByAppendingPathComponent:@"WRITING"] stringByAppendingPathComponent:@"a.md"]);
+    check("whatever the case of its folder's name", [r isEqualToString:@"a.md"], r);
+    r = at([[dir stringByAppendingPathComponent:@"Writing2"] stringByAppendingPathComponent:@"a.md"]);
+    check("a folder that only starts the same is somewhere else", r == nil, r);
+    r = at([dir stringByAppendingPathComponent:@"a.md"]);
+    check("so is the folder above", r == nil, r);
+    NSString *link = [dir stringByAppendingPathComponent:@"shortcut"];
+    [NSFileManager.defaultManager createSymbolicLinkAtPath:link withDestinationPath:root error:NULL];
+    r = at([link stringByAppendingPathComponent:@"Work/plan.md"]);
+    check("a path through a link into it counts", [r isEqualToString:@"Work/plan.md"], r);
+    r = ((NSString *(*)(id, SEL, NSURL *, NSString *))objc_msgSend)(
+        lib, @selector(pathOf:inFolder:), [NSURL fileURLWithPath:@"/tmp/a.md"], nil);
+    check("with no served folder, nothing does", r == nil, r);
 }
 
 static void pdf(NSString *dir) {
@@ -355,6 +441,8 @@ int main(int argc, const char *argv[]) {
                                                  attributes:nil error:NULL];
         printf("doc-smoke (the Mac app's documents):\n");
         readOnlyNote(dir);
+        fileWindow(dir);
+        servedFolder(dir);
         pdf(dir);
         book(dir);
         [NSFileManager.defaultManager removeItemAtPath:dir error:NULL];

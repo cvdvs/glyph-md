@@ -49,6 +49,24 @@
   ok("its tools are along the top", shown(q(".glyph-aa")) && box(q(".glyph-aa")).top < 100 &&
     shown(q('#glyph-nav [aria-label="Share"]')));
 
+  // ------------------------------------------------ a note opened from Finder on the Mac
+  ok("a note from another folder opens from the Mac", await window.glyphOpenNote("note.md") === true &&
+    q("#md").innerText.includes("A note beside the PDF"));
+  ok("with the list moved to its folder, and the note marked there",
+    side("").getAttribute("aria-current") === "true" && note("note.md") &&
+    note("note.md").getAttribute("aria-current") === "true");
+  ok("one already open is shown again", await window.glyphOpenNote("drafts/plan.md") === true &&
+    q("#md").innerText.includes("Plan for spring") && side("drafts").getAttribute("aria-current") === "true");
+  ok("one the Mac's disk spells differently still opens", await window.glyphOpenNote("Drafts/Plan.md") === true &&
+    q("#md").innerText.includes("Plan for spring"));
+  const statusBefore = q("#glyph-status") ? q("#glyph-status").textContent : "";
+  ok("a note the list does not show is refused, so the Mac opens it itself",
+    await window.glyphOpenNote("drafts/nowhere.md") === false && await window.glyphOpenNote(".hidden/plan.md") === false);
+  ok("PDFs and books stay with the Mac too",
+    await window.glyphOpenNote("book.pdf") === false && await window.glyphOpenNote("novel.epub") === false);
+  ok("a refusal puts up no message and leaves the note open", q("#md").innerText.includes("Plan for spring") &&
+    (q("#glyph-status") ? q("#glyph-status").textContent : "") === statusBefore);
+
   q('#glyph-dock [aria-label="New note"]').click();
   await until(() => q("#md").querySelector("h1") && !q("#md").innerText.includes("Plan for spring"));
   document.execCommand("insertText", false, "Desk idea");

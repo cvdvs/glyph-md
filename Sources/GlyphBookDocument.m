@@ -6,7 +6,7 @@
 // macOS has no reader for a book, so this is the same page the phone uses: the
 // reader lives in viewer.html, and this class only hands it the file. It answers
 // the page's one request, and every navigation stays refused.
-@interface GlyphBookDocument () <WKNavigationDelegate, WKScriptMessageHandler, NSToolbarDelegate>
+@interface GlyphBookDocument () <WKNavigationDelegate, WKScriptMessageHandler>
 @property (nonatomic, strong) NSData *bytes;
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, assign) BOOL pageReady;
@@ -49,7 +49,7 @@ static const NSUInteger kGlyphBookPiece = 3 * 1024 * 1024;
 }
 
 - (void)makeWindowControllers {
-    NSWindow *window = GlyphReaderWindow(self);
+    NSWindow *window = GlyphReaderWindow();
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
     [config.userContentController addScriptMessageHandler:self name:@"glyph"];
     WKWebView *web = [[WKWebView alloc] initWithFrame:window.contentView.bounds configuration:config];
@@ -142,9 +142,6 @@ static const NSUInteger kGlyphBookPiece = 3 * 1024 * 1024;
     [self.webView.configuration.userContentController removeScriptMessageHandlerForName:@"glyph"];
     [super close];
 }
-
-- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar { return @[]; }
-- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar { return @[]; }
 
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item {
     SEL a = item.action;

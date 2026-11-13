@@ -18,6 +18,23 @@ static NSColor *DynamicColor(CGFloat lr, CGFloat lg, CGFloat lb,
     }];
 }
 
+// A group of tools on a rounded tint, as the Notes window draws them
+// (viewer.html's .glyph-pill: the text color at 6%, ends fully round).
+@interface GlyphPill : NSView
+@end
+
+@implementation GlyphPill
+- (void)drawRect:(NSRect)dirtyRect {
+    [[GlyphFG() colorWithAlphaComponent:0.06] setFill];
+    CGFloat r = NSHeight(self.bounds) / 2;
+    [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:r yRadius:r] fill];
+}
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.needsDisplay = YES;
+}
+@end
+
 // Past this size the formatted view is not worth attempting: rendering a 1.6MB
 // note freezes the window for seconds and a 3MB one can kill the render process
 // outright. Opening straight as text takes well under a second. Measured against
@@ -249,7 +266,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
 @property (nonatomic, strong) GlyphGutter *gutter;
 @property (nonatomic, strong) NSView *formatBar;
 @property (nonatomic, strong) NSTextField *countLabel;
-@property (nonatomic, strong) NSToolbarItem *toggleItem;
+@property (nonatomic, strong) NSButton *toggleButton;
 @property (nonatomic, assign) BOOL editing;
 @property (nonatomic, assign) BOOL pageReady;
 @property (nonatomic, strong) NSURL *expectedURL;   // the one load we permit
@@ -360,22 +377,21 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     window.releasedWhenClosed = NO;
     window.minSize = NSMakeSize(480, 360);
     window.backgroundColor = PageBackgroundColor();
+    // The Notes window's look: a plain strip in the page's own color for the
+    // traffic lights, no title and no line under it. The note's first heading
+    // is its title, and the file's name is still on its tab and in the Window menu.
+    window.titlebarAppearsTransparent = YES;
+    window.titleVisibility = NSWindowTitleHidden;
+    if (@available(macOS 11.0, *)) {
+        window.titlebarSeparatorStyle = NSTitlebarSeparatorStyleNone;
+    }
     // Every document joins the front window as a tab, like a browser / PDF viewer.
     window.tabbingIdentifier = @"glyph";
     window.tabbingMode = NSWindowTabbingModePreferred;
-    if (@available(macOS 11.0, *)) {
-        window.toolbarStyle = NSWindowToolbarStyleUnified;
-    }
     [window center];
 
-    NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:@"glyph-toolbar"];
-    toolbar.delegate = self;
-    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
-    toolbar.allowsUserCustomization = NO;
-    window.toolbar = toolbar;
-
     NSView *content = [[NSView alloc] initWithFrame:frame];
-    CGFloat barHeight = 42;
+    CGFloat barHeight = 50;
 
     // Reading pane
     WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
@@ -466,8 +482,9 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     NSWindowController *wc = [[NSWindowController alloc] initWithWindow:window];
     [self addWindowController:wc];
 
-    // Join the front Glyph window as a tab; then make sure the tab bar is showing
-    // even for the first window, so tabs are visible from the start.
+    // Join the front Glyph window as a tab. macOS shows the tab bar once there are
+    // two; with one it would only repeat the note's name, so it is put away. (It
+    // used to be forced on, and macOS remembers that, so it is turned off here.)
     NSWindow *anchor = nil;
     for (NSWindow *w in NSApp.orderedWindows) {
         if (w != window && w.isVisible && [w.tabbingIdentifier isEqualToString:@"glyph"]) {
@@ -479,7 +496,7 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         [anchor addTabbedWindow:window ordered:NSWindowAbove];
     }
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (window.tabGroup && !window.tabGroup.tabBarVisible) {
+        if (window.tabGroup.tabBarVisible && window.tabGroup.windows.count < 2) {
             [window toggleTabBar:nil];
         }
     });
@@ -524,13 +541,42 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
         b = [NSButton buttonWithImage:img target:self action:action];
     } else {
         b = [NSButton buttonWithTitle:(title ?: @"?") target:self action:action];
-        b.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
+        b.attributedTitle = [[NSAttributedString alloc] initWithString:(title ?: @"?") attributes:@{
+            NSFontAttributeName: [NSFont systemFontOfSize:14 weight:NSFontWeightSemibold],
+            NSForegroundColorAttributeName: GlyphFG(),
+        }];
     }
-    b.bezelStyle = NSBezelStyleTexturedRounded;
-    b.bordered = YES;
-    b.showsBorderOnlyWhileMouseInside = YES;
+    // Plain icons on the pill's tint, the way the Notes window draws its tools.
+    b.bordered = NO;
+    b.contentTintColor = GlyphFG();
     b.toolTip = tip;
+    b.translatesAutoresizingMaskIntoConstraints = NO;
+    [b.heightAnchor constraintEqualToConstant:36].active = YES;
     return b;
+}
+
+// Buttons side by side on one rounded tint. A button on its own is a circle,
+// like the Notes window's compose button.
+- (NSView *)pillWith:(NSArray<NSButton *> *)buttons {
+    BOOL alone = buttons.count == 1;
+    for (NSButton *b in buttons) [b.widthAnchor constraintEqualToConstant:alone ? 36 : 34].active = YES;
+    NSStackView *row = [NSStackView stackViewWithViews:buttons];
+    row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    row.spacing = 0;
+    row.edgeInsets = NSEdgeInsetsMake(0, alone ? 0 : 3, 0, alone ? 0 : 3);
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    // Exactly as wide as its buttons: the bar's spare room goes between groups.
+    [row setHuggingPriority:NSLayoutPriorityRequired - 1 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    GlyphPill *pill = [[GlyphPill alloc] initWithFrame:NSZeroRect];
+    pill.translatesAutoresizingMaskIntoConstraints = NO;
+    [pill addSubview:row];
+    [NSLayoutConstraint activateConstraints:@[
+        [row.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor],
+        [row.trailingAnchor constraintEqualToAnchor:pill.trailingAnchor],
+        [row.topAnchor constraintEqualToAnchor:pill.topAnchor],
+        [row.bottomAnchor constraintEqualToAnchor:pill.bottomAnchor],
+    ]];
+    return pill;
 }
 
 - (NSView *)buildFormatBarWithFrame:(NSRect)frame {
@@ -563,73 +609,58 @@ static GlyphLinkAction GlyphActionForURL(NSURL *url) {
     NSButton *copyAll = [self fmtButton:@"doc.on.doc" title:@"⧉" action:@selector(copyWholeNote:)
                                     tip:@"Copy the whole note as markdown "
                                         @"(⇧⌘C copies the selection)"];
+    // Reading and the markdown itself, where the title bar's button used to be.
+    self.toggleButton = [self fmtButton:@"square.and.pencil" title:@"Edit"
+                                 action:@selector(toggleEditMode:) tip:@"Toggle reading / editing (⌘E)"];
+    [self updateToggleAppearance];
+
+    // copyAll sits third to match the shared toolbar the other platforms draw,
+    // where it has to be reachable without scrolling on a phone.
+    NSView *history = [self pillWith:@[undo, redo, copyAll]];
+    NSView *headings = [self pillWith:@[h1, h2, h3]];
+    NSView *inlineTools = [self pillWith:@[bold, italic, underline, strike, hl, code, link, eraser]];
+    NSView *blocks = [self pillWith:@[image, bullets, check, quote, callout, table, codeblock]];
+    NSView *mode = [self pillWith:@[self.toggleButton]];
 
     NSStackView *stack = [[NSStackView alloc] initWithFrame:bar.bounds];
     stack.translatesAutoresizingMaskIntoConstraints = YES;
+    stack.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     stack.alignment = NSLayoutAttributeCenterY;
-    stack.spacing = 8;
-    stack.edgeInsets = NSEdgeInsetsMake(0, 12, 0, 12);
-    stack.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    NSArray<NSButton *> *buttons =
-        // copyAll sits third to match the shared toolbar the other platforms
-        // draw, where it has to be reachable without scrolling on a phone.
-        @[undo, redo, copyAll, h1, h2, h3, bold, italic, underline, strike, hl, code,
-          link, image, bullets, check, quote, callout, table, codeblock, eraser];
-    for (NSButton *b in buttons) {
-        [stack addView:b inGravity:NSStackViewGravityCenter];
+    stack.spacing = 10;
+    // Hard against the strip above, as in the Notes window; air below.
+    stack.edgeInsets = NSEdgeInsetsMake(0, 14, 10, 14);
+    for (NSView *v in @[history, headings, inlineTools, blocks]) {
+        [stack addView:v inGravity:NSStackViewGravityLeading];
     }
-    [stack setCustomSpacing:20 afterView:redo];
-    [stack setCustomSpacing:20 afterView:copyAll];
-    [stack setCustomSpacing:20 afterView:h3];
-    [stack setCustomSpacing:20 afterView:code];
-    [stack setCustomSpacing:20 afterView:image];
-    [stack setCustomSpacing:20 afterView:codeblock];
+    [stack addView:mode inGravity:NSStackViewGravityTrailing];
+    // A narrow window drops whole groups from the right rather than squeezing
+    // them; everything is still in the Format menu.
+    [stack setVisibilityPriority:NSStackViewVisibilityPriorityMustHold forView:history];
+    [stack setVisibilityPriority:NSStackViewVisibilityPriorityMustHold forView:mode];
+    [stack setVisibilityPriority:800 forView:inlineTools];
+    [stack setVisibilityPriority:700 forView:headings];
+    [stack setVisibilityPriority:600 forView:blocks];
+    // Without this the row's full width is a floor under the window's width,
+    // and nothing is ever dropped.
+    [stack setClippingResistancePriority:NSLayoutPriorityDefaultLow
+                          forOrientation:NSLayoutConstraintOrientationHorizontal];
     [bar addSubview:stack];
-
-    NSBox *line = [[NSBox alloc] initWithFrame:NSMakeRect(0, 0, NSWidth(frame), 1)];
-    line.boxType = NSBoxSeparator;
-    line.autoresizingMask = NSViewWidthSizable;
-    [bar addSubview:line];
-
     return bar;
 }
 
-#pragma mark - Toolbar
-
-- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-    return @[NSToolbarFlexibleSpaceItemIdentifier, @"toggle"];
-}
-
-- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-    return @[NSToolbarFlexibleSpaceItemIdentifier, @"toggle"];
-}
-
-- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
-     itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
- willBeInsertedIntoToolbar:(BOOL)flag {
-    if (![itemIdentifier isEqualToString:@"toggle"]) return nil;
-    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:itemIdentifier];
-    item.label = @"Edit";
-    item.toolTip = @"Toggle reading / editing (⌘E)";
-    if (@available(macOS 10.15, *)) {
-        item.bordered = YES;
-    }
-    item.target = self;
-    item.action = @selector(toggleEditMode:);
-    self.toggleItem = item;
-    [self updateToggleAppearance];
-    return item;
-}
+#pragma mark - Edit toggle
 
 - (void)updateToggleAppearance {
     NSString *symbol = self.editing ? @"book" : @"square.and.pencil";
     NSString *label = self.editing ? @"Read" : @"Edit";
     if (@available(macOS 11.0, *)) {
-        self.toggleItem.image = [NSImage imageWithSystemSymbolName:symbol
-                                          accessibilityDescription:label];
+        NSImage *img = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:label];
+        NSImageSymbolConfiguration *cfg =
+            [NSImageSymbolConfiguration configurationWithPointSize:15 weight:NSFontWeightMedium];
+        self.toggleButton.image = [img imageWithSymbolConfiguration:cfg] ?: img;
     }
-    self.toggleItem.label = label;
+    self.toggleButton.toolTip = self.editing ? @"Back to reading (⌘E)" : @"Edit the markdown itself (⌘E)";
 }
 
 #pragma mark - Mode switching
