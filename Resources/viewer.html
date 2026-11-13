@@ -1222,7 +1222,12 @@
     max-width: calc(var(--book-measure, 34em) + 2 * var(--book-edge));
     padding: 18px var(--book-edge) 6px;
     overflow: hidden;
+    /* A width as well as a count: WebKit before 2026 (Safari 18, iOS 18) does not
+       make columns at all for column-count 1 with column-width auto, so the
+       chapter became one tall column, clipped, and read "Page 1 of 1". 1px is
+       only a floor: the count decides how many, and they share the width. */
     column-count: 1;
+    column-width: 1px;
     column-gap: calc(2 * var(--book-edge));
     column-fill: auto;
     -webkit-user-select: text;
