@@ -55,6 +55,12 @@ SHAKY_PROB = 0.5
 # The loudest 20 ms of anything spoken is far above this; a quiet room is below.
 SILENCE_DBFS = -55.0
 
+# "Auto" means one of the languages she speaks, never any of Whisper's 99: left
+# to choose freely, a short English or Romanian clip came back as Icelandic
+# ("Ok, það er test, hvað við?"). The choice is made on the same first 30 s
+# Whisper itself uses, with every other language left out of the vote.
+AUTO_LANGUAGES = ("en", "ro")
+
 
 def reply(obj):
     PROTO.write(json.dumps(obj) + "\n")
@@ -77,6 +83,20 @@ def loudest_db(pcm, np):
     frames = pcm[: pcm.size // frame * frame].astype(np.float64).reshape(-1, frame)
     rms = float(np.sqrt((frames * frames).mean(axis=1)).max())
     return 20.0 * np.log10(max(rms, 1e-6))
+
+
+def pick_language(audio, mx):
+    """English or Romanian, whichever Whisper rates higher for this recording."""
+    from mlx_whisper.audio import N_FRAMES, N_SAMPLES, log_mel_spectrogram, pad_or_trim
+    from mlx_whisper.transcribe import ModelHolder
+
+    model = ModelHolder.get_model(MODEL, mx.float16)
+    if not model.is_multilingual:
+        return "en"
+    mel = log_mel_spectrogram(audio, n_mels=model.dims.n_mels, padding=N_SAMPLES)
+    mel = pad_or_trim(mel, N_FRAMES, axis=-2).astype(mx.float16)
+    _, probs = model.detect_language(mel)
+    return max(AUTO_LANGUAGES, key=lambda code: probs.get(code, 0.0))
 
 
 def keep(seg, pcm, rate, np):
@@ -137,6 +157,8 @@ def main():
             if loudest_db(pcm, np) < SILENCE_DBFS:
                 reply({"id": jid, "language": lang, "duration": duration, "segments": []})
                 continue
+            if lang is None:
+                lang = pick_language(audio, mx)
             result = mlx_whisper.transcribe(
                 audio,
                 path_or_hf_repo=MODEL,
