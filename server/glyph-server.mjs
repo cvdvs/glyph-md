@@ -608,6 +608,27 @@ const AUDIO_TYPES = new Map([
   ["audio/x-wav", ".wav"], ["audio/mpeg", ".mp3"],
 ]);
 const MAX_AUDIO_BYTES = 40 * 1024 * 1024;
+// Recordings are kept only while this folder exists, which is how its owner says
+// yes: they are her voice and what she said, so it is opt-in and stays in Glyph's
+// own settings folder, never in the notes. They are there to compare models on
+// her real speech (Scripts/voice-compare.py); delete the folder and it stops.
+const SAMPLES_DIR = path.join(CONFIG_DIR, "voice-samples");
+async function keepSample(audio, ext, info) {
+  try {
+    const st = await lstat(SAMPLES_DIR);
+    if (!st.isDirectory() || st.isSymbolicLink()) return false;
+  } catch {
+    return false;
+  }
+  const name = new Date().toISOString().replace(/[:.]/g, "-") + "-" + randomBytes(3).toString("hex");
+  try {
+    await writeFile(path.join(SAMPLES_DIR, name + ext), audio, { mode: 0o600, flag: "wx" });
+    await writeFile(path.join(SAMPLES_DIR, name + ".json"), JSON.stringify(info, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 const VOICE_TIMEOUT_MS = Number(process.env.GLYPH_VOICE_TIMEOUT_MS) || 120_000;  // the env is for tests
 const VOICE_IDLE_MS = 15 * 60_000;
 const VOICE_RECHECK_MS = 60_000;
@@ -974,11 +995,14 @@ const server = createServer(async (req, res) => {
         const last = segs.length ? Number(segs[segs.length - 1].end) : 0;
         const dur = Number.isFinite(msg.duration) ? msg.duration : Number.isFinite(last) ? last : 0;
         const seconds = Math.round(dur * 10) / 10;
-        console.log(`glyph-voice: ${seconds}s of audio, ${kb} KB, ` +
-          `${text ? "transcribed" : "no speech"} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-        if (!text) return json(res, 422, { error: "no speech" });
         const language = typeof msg.language === "string" && /^[a-z]{2,3}$/i.test(msg.language)
           ? msg.language.toLowerCase() : null;
+        const kept = await keepSample(audio, ext, { asked: lang, language, seconds, text,
+          model: process.env.GLYPH_WHISPER_MODEL || "mlx-community/whisper-large-v3-turbo" });
+        console.log(`glyph-voice: ${seconds}s of audio, ${kb} KB, ` +
+          `${text ? "transcribed" : "no speech"} in ${((Date.now() - t0) / 1000).toFixed(1)}s` +
+          (kept ? ", kept for comparison" : ""));
+        if (!text) return json(res, 422, { error: "no speech" });
         return json(res, 200, { text, language, seconds });
       }
 

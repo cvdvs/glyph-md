@@ -116,6 +116,32 @@ loaded for 15 minutes after the last note, then quits to give its memory back.
 The recording is saved to a private temporary file and deleted as soon as it
 has been read. Neither the audio nor the words are ever written to a log.
 
+### Comparing models on your own voice
+
+Whisper does not learn a voice by itself, so the way to better dictation is to
+try setups on real recordings and keep the one that hears you best. To keep
+recordings for that, make the folder; delete it to stop:
+
+```bash
+mkdir -m 700 ~/.config/glyph/voice-samples
+```
+
+While it exists, each recording is kept there with what Glyph heard (both
+0600), and only there: never in the notes folder, never in a log. Then:
+
+```bash
+"$(head -1 ~/.config/glyph/python)" Scripts/voice-compare.py
+```
+
+writes `comparison.html` beside the recordings: each one, then what each setup
+heard and how long it took. The setups are the model Glyph uses now
+(large-v3-turbo), the full `mlx-community/whisper-large-v3-mlx` (about 3 GB,
+downloaded once), that model with a word list as a hint, and, only if
+`~/.config/glyph/openai-key` exists, OpenAI's `whisper-1` and
+`gpt-4o-transcribe`, which send the recordings to OpenAI. The word list is
+`~/.config/glyph/voice-words.txt`, one name or term per line: the hint is
+written in the language being spoken, Romanian with its diacritics.
+
 ### The microphone needs the HTTPS address
 
 The phone only lets a page use the microphone on an `https://` address, so voice

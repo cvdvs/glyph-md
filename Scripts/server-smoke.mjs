@@ -801,7 +801,25 @@ async function main() {
      jobs.some((j) => j.path.endsWith(".webm")) && new Set(jobs.map((j) => j.path)).size === jobs.length);
   ok("and every one was deleted afterwards, crash and timeout included",
      jobs.every((j) => !existsSync(j.path)));
-  ok("nothing that was said reaches the log", !/zebra/i.test(out));
+  // Recordings are kept only once their owner makes the folder, and only there.
+  const samples = path.join(config, "voice-samples");
+  ok("no recording is kept by default", !existsSync(samples));
+  await mkdir(samples, { mode: 0o700 });
+  r = await say("CASE:romanian", "audio/mp4", "?lang=ro");
+  const kept = (await readdir(samples)).sort();
+  const keptJson = kept.find((n) => n.endsWith(".json"));
+  const keptAudio = kept.find((n) => n.endsWith(".m4a"));
+  const sample = keptJson ? JSON.parse(await readFile(path.join(samples, keptJson), "utf8")) : {};
+  ok("with the folder made, a recording and its transcript are kept there, 0600",
+     r.status === 200 && kept.length === 2 && !!keptAudio &&
+     (await readFile(path.join(samples, keptAudio), "utf8")) === "CASE:romanian" &&
+     sample.asked === "ro" && sample.language === "ro" && /^Ăsta e începutul/.test(sample.text) &&
+     ((await stat(path.join(samples, keptAudio))).mode & 0o777) === 0o600 &&
+     ((await stat(path.join(samples, keptJson))).mode & 0o777) === 0o600, kept.join(", "));
+  await rm(samples, { recursive: true });
+  r = await say("CASE:pause");
+  ok("and deleting the folder stops it", r.status === 200 && !existsSync(samples));
+  ok("nothing that was said reaches the log", !/zebra|ăsta/i.test(out));
   ok("the log says what happened in sizes and seconds", /glyph-voice: 6\.5s of audio, 0 KB, transcribed/.test(out));
 
   // No worker: voice reports itself off and refuses, rather than hanging.
