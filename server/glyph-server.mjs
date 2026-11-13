@@ -35,7 +35,7 @@
 import { createServer } from "node:http";
 import { readFile, writeFile, readdir, stat, lstat, rename, mkdir, unlink, link, open } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { realpathSync, existsSync, readFileSync, accessSync, statSync, constants as FS } from "node:fs";
+import { realpathSync, existsSync, readFileSync, accessSync, statSync, lstatSync, constants as FS } from "node:fs";
 import { execFileSync, execFile, spawn } from "node:child_process";
 import { networkInterfaces, homedir, hostname, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -294,6 +294,7 @@ async function eachLimited(items, limit, fn) {
 // ------------------------------------------------------------- file listing
 async function listFiles() {
   const found = [];
+  const folders = [];
   async function walk(dir, relBase) {
     let entries;
     try {
@@ -307,6 +308,7 @@ async function listFiles() {
       const abs = path.join(dir, e.name);
       const rel = relBase ? relBase + "/" + e.name : e.name;
       if (e.isDirectory()) {
+        if (folders.length < MAX_FILES) folders.push(rel);
         await walk(abs, rel);
       } else if (e.isFile() && (isServable(e.name) || isPdf(e.name) || isBook(e.name))) {
         try {
@@ -317,15 +319,129 @@ async function listFiles() {
   }
   await walk(ROOT, "");
   const out = new Array(found.length);
+  const pinned = await loadPins();
   await eachLimited(found, 16, async ({ abs, rel, name, s }, i) => {
     const { title, preview } = await fileMeta(abs, name, s);
     out[i] = { path: rel, name, size: s.size, mtime: Math.floor(s.mtimeMs), title, preview };
+    if (pinned.has(rel)) out[i].pinned = true;
   });
   // Forget files that are gone (renamed, deleted), so the cache cannot grow forever.
   const seen = new Set(found.map((f) => f.abs));
   for (const k of metaCache.keys()) if (!seen.has(k)) metaCache.delete(k);
   out.sort((a, b) => b.mtime - a.mtime);  // most-recently-edited first
-  return out;
+  return { files: out, folders };
+}
+
+// ------------------------------------------------------- folder management
+// The Mac's own Trash, so nothing sent there from the phone is gone for good.
+const TRASH_DIR = process.env.GLYPH_TRASH_DIR || path.join(homedir(), ".Trash");
+
+// A path the library shows: no hidden or skipped folder anywhere along it, so a
+// request can never reach .git, .obsidian or anything else the list leaves out.
+function listedPath(rel) {
+  return rel.split("/").every((seg) => seg && !seg.startsWith(".") && !SKIP_DIRS.has(seg));
+}
+function relOf(abs) {
+  return path.relative(ROOT, abs).split(path.sep).join("/");
+}
+// Something that can be moved or sent to the Trash: a note, a PDF, a book or a
+// folder, really inside the root. Never the root itself and never a symlink:
+// moving a link moves only the link, and a link can point anywhere.
+async function movable(rel) {
+  const abs = resolveInRoot(rel);
+  if (!abs || abs === ROOT || !listedPath(rel)) return { error: 400 };
+  let st;
+  try {
+    st = await lstat(abs);
+  } catch {
+    return { error: 404 };
+  }
+  if (st.isSymbolicLink()) return { error: 400 };
+  try {
+    if (!inRoot(realpathSync(path.dirname(abs))) || !inRoot(realpathSync(abs))) return { error: 400 };
+  } catch {
+    return { error: 400 };
+  }
+  if (st.isDirectory()) return { abs, st, dir: true };
+  if (st.isFile() && (isServable(abs) || isPdf(abs) || isBook(abs))) return { abs, st, dir: false };
+  return { error: 400 };
+}
+// A folder something can be put in: an existing, real folder in the root, not a
+// link to one. Returns its real path.
+function intoFolder(abs) {
+  try {
+    if (abs !== ROOT && lstatSync(abs).isSymbolicLink()) return null;
+    const real = realpathSync(abs);
+    return inRoot(real) && statSync(real).isDirectory() ? real : null;
+  } catch {
+    return null;
+  }
+}
+
+// ------------------------------------------------------------------- pins
+// Pinned notes are kept on the Mac, so the phone and the Mac window show the
+// same ones. One small file per served folder, in Glyph's own settings folder:
+// never in the notes themselves, which Obsidian and git also read.
+const PINS_FILE = path.join(CONFIG_DIR,
+  "pins-" + createHash("sha256").update(ROOT).digest("hex").slice(0, 12) + ".json");
+const MAX_PINS = 500;
+let pins = null;
+let pinsSaving = Promise.resolve();
+async function loadPins() {
+  if (pins) return pins;
+  try {
+    const list = JSON.parse(await readFile(PINS_FILE, "utf8"));
+    pins = new Set(Array.isArray(list) ? list.filter((x) => typeof x === "string").slice(0, MAX_PINS) : []);
+  } catch {
+    pins = new Set();
+  }
+  return pins;
+}
+// One write at a time, through a fresh temp file renamed into place, so a link
+// planted at the pins file's name is replaced rather than written through.
+function savePins() {
+  const text = JSON.stringify([...pins]);
+  pinsSaving = pinsSaving.then(async () => {
+    try {
+      await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+      const tmp = PINS_FILE + "." + randomBytes(6).toString("hex") + ".tmp";
+      await writeFile(tmp, text, { mode: 0o600, flag: "wx" });
+      await rename(tmp, PINS_FILE);
+    } catch {
+      console.log("glyph-pins: could not save the pinned notes");
+    }
+  });
+  return pinsSaving;
+}
+// After a move, a pin follows its note; after the Trash, it goes, and comes
+// back with Undo. Returns the pins it took away.
+async function movePins(from, to, dir) {
+  await loadPins();
+  const gone = [];
+  for (const p of [...pins]) {
+    const hit = p === from || (dir && p.startsWith(from + "/"));
+    if (!hit) continue;
+    pins.delete(p);
+    gone.push(p);
+    if (to !== null) pins.add(to + p.slice(from.length));
+  }
+  if (gone.length) await savePins();
+  return gone;
+}
+
+// Undo for the Trash: only what this server put there itself, for a quarter of
+// an hour, and only back to where it came from. Anything else in the Trash is
+// the Mac's business; letting a request pull an arbitrary file out of it into
+// the served folder would make it readable from the phone.
+const UNDO_MS = 15 * 60 * 1000;
+const trashed = new Map();
+function rememberTrashed(item) {
+  const now = Date.now();
+  for (const [k, v] of trashed) if (now - v.at > UNDO_MS) trashed.delete(k);
+  while (trashed.size >= 50) trashed.delete(trashed.keys().next().value);
+  const id = randomBytes(16).toString("hex");
+  trashed.set(id, { ...item, at: now });
+  return id;
 }
 
 // ------------------------------------------------------------- atomic write
@@ -807,7 +923,8 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === "GET" && p === "/api/files") {
-        return json(res, 200, { root: path.basename(ROOT), files: await listFiles() });
+        const { files, folders } = await listFiles();
+        return json(res, 200, { root: path.basename(ROOT), files, folders });
       }
 
       if (req.method === "GET" && p === "/api/info") {
@@ -909,6 +1026,147 @@ const server = createServer(async (req, res) => {
         // The same spelling the list uses, whatever the request looked like.
         const rel = path.relative(ROOT, toAbs).split(path.sep).join("/");
         return json(res, 200, { path: rel, mtime: Math.floor(s.mtimeMs) });
+      }
+
+      // Folder management: make a folder, move or rename a note or a folder, and
+      // send either to the Mac's Trash. Nothing is ever deleted outright.
+      if (req.method === "POST" && ["/api/folder", "/api/move", "/api/trash", "/api/untrash", "/api/pin"].includes(p)) {
+        let body;
+        try {
+          body = JSON.parse((await readBody(req, MAX_LOG_BYTES)).toString("utf8"));
+        } catch {
+          return json(res, 400, { error: "bad body" });
+        }
+        if (!body || typeof body !== "object") return json(res, 400, { error: "bad body" });
+
+        if (p === "/api/folder") {
+          const rel = body.path;
+          const abs = resolveInRoot(rel);
+          if (!abs || abs === ROOT || !listedPath(rel) || !plainName(path.basename(abs))) {
+            return json(res, 400, { error: "bad name" });
+          }
+          if (!intoFolder(path.dirname(abs))) return json(res, 400, { error: "bad path" });
+          try {
+            await mkdir(abs);  // one level, and never over anything already there
+          } catch (e) {
+            if (e && e.code === "EEXIST") return json(res, 409, { error: "exists" });
+            return json(res, 500, { error: "could not make the folder" });
+          }
+          return json(res, 200, { path: relOf(abs) });
+        }
+
+        // Put back what this server sent to the Trash a moment ago.
+        if (p === "/api/untrash") {
+          const item = typeof body.undo === "string" ? trashed.get(body.undo) : null;
+          if (!item || Date.now() - item.at > UNDO_MS) return json(res, 404, { error: "nothing to undo" });
+          trashed.delete(body.undo);
+          let st;
+          try {
+            st = await lstat(item.dest);
+          } catch {
+            return json(res, 404, { error: "no longer in the trash" });
+          }
+          // The very same item, not something put in its place since.
+          if (st.isSymbolicLink() || st.ino !== item.ino || st.dev !== item.dev) {
+            return json(res, 404, { error: "no longer in the trash" });
+          }
+          if (!intoFolder(path.dirname(item.abs))) return json(res, 409, { error: "its folder is gone" });
+          try {
+            await lstat(item.abs);
+            return json(res, 409, { error: "exists" });
+          } catch { /* free: good */ }
+          try {
+            await rename(item.dest, item.abs);
+          } catch {
+            return json(res, 500, { error: "could not put it back" });
+          }
+          if (item.pins.length) {
+            await loadPins();
+            item.pins.forEach((x) => pins.add(x));
+            await savePins();
+          }
+          return json(res, 200, { path: relOf(item.abs) });
+        }
+
+        const from = await movable(body.path !== undefined ? body.path : body.from);
+        if (from.error) return json(res, from.error, { error: from.error === 404 ? "not found" : "bad path" });
+
+        if (p === "/api/move") {
+          const toAbs = resolveInRoot(body.to);
+          if (!toAbs || toAbs === ROOT || !listedPath(body.to) || !plainName(path.basename(toAbs))) {
+            return json(res, 400, { error: "bad name" });
+          }
+          // A file keeps its kind: a note stays a note and a PDF stays a PDF.
+          if (!from.dir && path.extname(toAbs).toLowerCase() !== path.extname(from.abs).toLowerCase()) {
+            return json(res, 400, { error: "different kind" });
+          }
+          const parent = intoFolder(path.dirname(toAbs));
+          if (!parent) return json(res, 400, { error: "bad path" });
+          // A folder cannot go inside itself (compared without case too, as the
+          // Mac's disk ignores it; the system refuses this as well, with EINVAL).
+          if (from.dir) {
+            const self = realpathSync(from.abs).toLowerCase();
+            const into = parent.toLowerCase();
+            if (into === self || into.startsWith(self + path.sep)) return json(res, 400, { error: "inside itself" });
+          }
+          try {
+            const there = await lstat(toAbs);
+            // The same item under another case ("note.md" -> "Note.md") on a
+            // case-insensitive disk is a rename, not a clash.
+            if (there.ino !== from.st.ino || there.dev !== from.st.dev) return json(res, 409, { error: "exists" });
+          } catch { /* free: good */ }
+          try {
+            await rename(from.abs, toAbs);
+          } catch (e) {
+            if (e && e.code === "EINVAL") return json(res, 400, { error: "inside itself" });
+            if (e && (e.code === "EEXIST" || e.code === "ENOTEMPTY")) return json(res, 409, { error: "exists" });
+            return json(res, 500, { error: "could not move" });
+          }
+          const out = { path: relOf(toAbs) };
+          if (!from.dir) out.mtime = Math.floor((await stat(toAbs)).mtimeMs);
+          await movePins(relOf(from.abs), out.path, from.dir);
+          return json(res, 200, out);
+        }
+
+        if (p === "/api/pin") {
+          if (from.dir) return json(res, 400, { error: "only notes are pinned" });
+          await loadPins();
+          const rel = relOf(from.abs);
+          if (body.pinned === false) pins.delete(rel);
+          else if (pins.size >= MAX_PINS && !pins.has(rel)) return json(res, 400, { error: "too many pins" });
+          else pins.add(rel);
+          await savePins();
+          return json(res, 200, { path: rel, pinned: pins.has(rel) });
+        }
+
+        // /api/trash: into the Trash under a name not already taken there.
+        const base = path.basename(from.abs);
+        const ext = from.dir ? "" : path.extname(base);
+        const bare = ext ? base.slice(0, -ext.length) : base;
+        let dest = null;
+        for (let n = 1; n < 1000 && !dest; n++) {
+          const name = n === 1 ? base : `${bare} ${n}${ext}`;
+          try {
+            await lstat(path.join(TRASH_DIR, name));
+          } catch (e) {
+            if (e && e.code === "ENOENT") dest = path.join(TRASH_DIR, name);
+            else return json(res, 500, { error: "no trash" });
+          }
+        }
+        if (!dest) return json(res, 500, { error: "no free name" });
+        try {
+          await rename(from.abs, dest);
+        } catch {
+          return json(res, 500, { error: "could not move to the trash" });
+        }
+        console.log(`glyph-trash: moved a ${from.dir ? "folder" : "file"} to the Trash`);
+        const gone = await movePins(relOf(from.abs), null, from.dir);
+        let undo = null;
+        try {
+          const st = await lstat(dest);
+          undo = rememberTrashed({ dest, abs: from.abs, ino: st.ino, dev: st.dev, pins: gone });
+        } catch { /* it is in the Trash; only Undo is lost */ }
+        return json(res, 200, { trashed: true, undo });
       }
 
       if (req.method === "GET" && p === "/api/file") {

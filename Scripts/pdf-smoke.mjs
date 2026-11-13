@@ -252,11 +252,17 @@ const books = {
 };
 for (const [name, bytes] of Object.entries(books)) await writeFile(path.join(root, name), bytes);
 
+// The Trash the page sends things to, never the Mac's own.
+const trashDir = await mkdtemp(path.join(tmpdir(), "glyph-trash-"));
+// Its own settings folder too, so pins made by a test never reach the real ones.
+// The pairing token stays where it is (rule 44).
+const configDir = await mkdtemp(path.join(tmpdir(), "glyph-config-"));
 const PORT = 30000 + (process.pid % 9000);
 // Whisper is played by a stand-in that answers by the text it is sent.
 const srv = spawn(process.execPath, [path.join(HERE, "..", "server", "glyph-server.mjs"), root, `--port=${PORT}`],
                   { stdio: ["ignore", "pipe", "pipe"],
-                    env: { ...process.env, GLYPH_WHISPER_CMD: JSON.stringify([process.execPath, path.join(HERE, "fake-whisper.mjs")]) } });
+                    env: { ...process.env, GLYPH_WHISPER_CMD: JSON.stringify([process.execPath, path.join(HERE, "fake-whisper.mjs")]),
+                           GLYPH_TRASH_DIR: trashDir, GLYPH_CONFIG_DIR: configDir } });
 let browser = null;
 const cleanup = () => {
   try { srv.kill("SIGKILL"); } catch {}
@@ -366,6 +372,11 @@ try {
   if (suiteName === "wide-smoke") {
     results.push({ what: "a note made with a folder chosen on the left went into that folder",
                    pass: (await readdir(path.join(root, "drafts"))).includes("Desk idea.md"), detail: "" });
+    const trashed = await readdir(trashDir);
+    results.push({ what: "the dragged note and the trashed folder are in the Trash",
+                   pass: trashed.includes("Drag me.md") && trashed.includes("Old desk") &&
+                         !(await readdir(path.join(root, "drafts"))).some((n) => /Desk$|Drag me/.test(n)),
+                   detail: trashed.join(", ") });
   }
   if (suiteName === "notes-smoke") {
     const made = (await readdir(root)).filter((n) => n.endsWith(".md"));
@@ -379,6 +390,18 @@ try {
     results.push({ what: "the dictation reached the note on disk", pass: /Zebra/.test(note) && /\[ \]/.test(note), detail: "" });
     const voiceNote = made.find((n) => /^Zebra/.test(n));
     results.push({ what: "a voice note became a file of its own", pass: !!voiceNote, detail: voiceNote || "" });
+    const trashed = await readdir(trashDir);
+    results.push({ what: "a note moved with an edit in flight took the edit along, and left nothing behind",
+                   pass: /EXTRA/.test(await readFile(path.join(trashDir, "Moved note.md"), "utf8").catch(() => "")) &&
+                         !made.includes("Move me.md") && !made.includes("Moved note.md"), detail: trashed.join(", ") });
+    results.push({ what: "the trashed folder is in the Trash, not deleted",
+                   pass: trashed.includes("Work"), detail: trashed.join(", ") });
+    const pinFile = (await readdir(configDir)).find((n) => /^pins-.*\.json$/.test(n));
+    const pinList = pinFile ? JSON.parse(await readFile(path.join(configDir, pinFile), "utf8")) : [];
+    results.push({ what: "the pin is kept on the Mac, in Glyph's settings",
+                   pass: JSON.stringify(pinList) === JSON.stringify(["Grocery list.md"]), detail: JSON.stringify(pinList) });
+    results.push({ what: "the moved folder is inside the other one on disk",
+                   pass: (await readdir(path.join(root, "Archive")).catch(() => [])).includes("Inbox"), detail: "" });
   }
   results.push(suiteName === "notes-smoke"
     ? { what: "the note kept everything typed into it", pass: /Plain words added/.test(note), detail: "" }

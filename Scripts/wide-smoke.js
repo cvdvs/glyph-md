@@ -72,6 +72,99 @@
     document.activeElement === search && q(".glyph-search input") === search);
   search.value = "";
   search.dispatchEvent(new Event("input"));
+  // ------------------------------------------------ folders, as on a Mac
+  const menu = (label) => qa("#glyph-more .glyph-menu-item").find((b) => b.textContent === label);
+  const askShown = () => shown(q("#glyph-ask"));
+  const askButton = (label) => qa("#glyph-ask button").find((b) => b.textContent === label);
+  const nameIt = async (text, go) => {
+    const input = await until(() => askShown() && q("#glyph-ask .glyph-ask-input"));
+    input.value = text;
+    askButton(go).click();
+  };
+  const rightClick = (el, x, y) => el.dispatchEvent(new MouseEvent("contextmenu",
+    { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  const fire = (el, type) => {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    el.dispatchEvent(e);
+    return e;
+  };
+
+  side("").click();
+  const newFolderButton = q(".glyph-side-new");
+  ok("New Folder sits at the foot of the sidebar", shown(newFolderButton) &&
+    box(newFolderButton).bottom > innerHeight - 60 && box(newFolderButton).right <= box(q(".glyph-lib-side")).right,
+    JSON.stringify(box(newFolderButton)));
+  newFolderButton.click();
+  await until(askShown);
+  const sheetBox = box(q("#glyph-ask"));
+  ok("its question sits in the middle of the window",
+    Math.abs((sheetBox.left + sheetBox.right) / 2 - innerWidth / 2) < 4 && sheetBox.top < innerHeight / 2,
+    JSON.stringify(sheetBox));
+  ok("and says where the folder will go", /^In /.test(q(".glyph-ask-note").textContent));
+  await nameIt("Desk", "Create");
+  ok("the new folder is in the sidebar, and chosen",
+    await until(() => side("Desk") && side("Desk").getAttribute("aria-current") === "true"));
+  ok("an empty folder says so", /0 notes/.test(q(".glyph-lib-count").textContent));
+
+  q('#glyph-dock [aria-label="New note"]').click();
+  await until(() => q("#md").querySelector("h1") && !q("#md").innerText.includes("Desk idea"));
+  document.execCommand("insertText", false, "Drag me");
+  document.execCommand("insertParagraph");
+  document.execCommand("insertText", false, "Across the sidebar.");
+  const dragged = await until(() => note("Drag me.md"), 5000);
+  ok("a note in the list can be dragged", !!dragged && dragged.draggable);
+  fire(dragged, "dragstart");
+  const over = fire(side("drafts"), "dragover");
+  ok("a folder in the sidebar takes it", over.defaultPrevented && side("drafts").classList.contains("glyph-drop"));
+  ok("the folder it is already in does not", !fire(side("Desk"), "dragover").defaultPrevented);
+  fire(side("drafts"), "drop");
+  fire(dragged, "dragend");
+  ok("dropped on a folder, it moves there", await until(() => !note("Drag me.md"), 5000));
+  side("drafts").click();
+  ok("and is listed in it, still open", !!(await until(() => note("Drag me.md"))) &&
+    note("Drag me.md").getAttribute("aria-current") === "true" && q("#md").innerText.includes("Across the sidebar"));
+
+  fire(side("Desk"), "dragstart");
+  fire(side("drafts"), "drop");
+  ok("a folder dragged onto another goes inside it", await until(() => side("drafts/Desk") && !side("Desk"), 5000));
+  fire(side("drafts"), "dragstart");
+  ok("but never into itself", !fire(side("drafts/Desk"), "dragover").defaultPrevented);
+  fire(side("drafts"), "dragend");
+  ok("the top folder cannot be dragged at all", !side("").draggable);
+
+  rightClick(side("drafts/Desk"), 120, 300);
+  await until(() => menu("Rename Folder…"));
+  const menuBox = box(q("#glyph-more"));
+  ok("a right-click opens a small menu where the pointer is",
+    Math.abs(menuBox.left - 120) < 2 && Math.abs(menuBox.top - 300) < 2 && menuBox.width < 260, JSON.stringify(menuBox));
+  menu("Rename Folder…").click();
+  await nameIt("Old desk", "Rename");
+  ok("a folder is renamed from its menu", await until(() => side("drafts/Old desk") && !side("drafts/Desk"), 5000));
+  rightClick(side("drafts/Old desk"), 120, 300);
+  await until(() => menu("Move to Trash"));
+  menu("Move to Trash").click();
+  ok("and an empty one goes to the Trash from it, without a question",
+    await until(() => !side("drafts/Old desk"), 5000) && !askShown());
+
+  side("drafts").click();
+  await until(() => note("Drag me.md"));
+  rightClick(note("Drag me.md"), 700, 200);
+  await until(() => menu("Pin"));
+  menu("Pin").click();
+  const pinnedHead = () => qa(".glyph-lib-when").find((h) => h.textContent === "Pinned");
+  ok("a note pinned from its menu heads the list", !!(await until(pinnedHead, 5000)) &&
+    pinnedHead().nextElementSibling.querySelector(".glyph-lib-note").dataset.path === "drafts/Drag me.md");
+  ok("the Mac window has no swipe rows", !q(".glyph-swipe"));
+
+  rightClick(note("Drag me.md"), 700, 200);
+  await until(() => menu("Move to Trash"));
+  ok("a right-click on a note offers its own actions", !!menu("Move to…") && !!menu("Rename File…"));
+  menu("Move to Trash").click();
+  ok("a note sent to the Trash leaves the list", await until(() => !note("Drag me.md"), 5000));
+  ok("and the page beside it, since it was open", body.classList.contains("glyph-no-doc"));
+  ok("with Undo beside the note pane", shown(q("#glyph-undo")) &&
+    box(q("#glyph-undo")).left > box(q(".glyph-lib-list")).right);
+
   ok("no page errors", errors.length === 0, errors.join(" | "));
   return JSON.stringify(out);
 })()

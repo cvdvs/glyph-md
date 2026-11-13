@@ -135,12 +135,23 @@ computer. There is only **one copy** of each
 file, so it is genuinely live and there is nothing to sync and no conflict to
 untangle; close the phone and the edit is already on disk.
 
+**Folders and pins.** Make a folder, rename it, move notes and folders between
+folders, and send either to the Trash, from the "…" menu at the top or by pressing
+and holding a row. On the phone a row swipes as in Notes: to the left for Move and
+Delete, to the right for Pin, and all the way across to do it at once. Pinned notes
+head their folder, on the phone and the Mac alike, since the pins are kept on the
+computer. In the Mac's Notes window, drag a note or a folder onto a folder in the
+sidebar, right-click for the same menu, or use New Folder at the bottom. Nothing is
+deleted: the Trash is the computer's own, so anything sent there can be taken back
+out, and a note sent there offers Undo for a few seconds. A folder with notes in it
+asks first. A note moved while an edit is still saving takes the edit with it.
+
 **Add it to your home screen** (iOS: Share → Add to Home Screen) and it opens
 full-screen with its own icon and no browser chrome: touch targets sized to 44pt,
 the toolbar padded for the notch, and a text-size control for reading in bed.
 
 **Dictation.** The microphone records on the phone and Whisper writes it down on the
-computer, in English or Romanian (it tells them apart by itself, or you choose),
+computer, in English or Romanian (Auto picks between those two, or you choose),
 in paragraphs where you paused, right where the cursor was. It needs a Mac with
 Apple silicon and `mlx_whisper`; see [docs/mobile.md](docs/mobile.md#voice). A
 phone only allows a microphone on an `https` address.

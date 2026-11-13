@@ -16,7 +16,7 @@
 // Scripts/fake-whisper.mjs through GLYPH_WHISPER_CMD, so this needs no Python,
 // no mlx and no model, and runs the same on a Linux CI runner.
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, stat, lstat, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink, stat, lstat, utimes } from "node:fs/promises";
 import { rmSync, existsSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
@@ -76,6 +76,21 @@ await mkdir(path.join(drafts, "ren", "folder.md"));
 // The settings folder the server is pointed at instead of ~/.config/glyph. The
 // token does NOT move with it (rule 44), which is why it is still read below
 // from the home folder.
+// Folder management: a library to move things around in, and a stand-in for
+// the Mac's Trash.
+const lib = (...p) => path.join(drafts, "lib", ...p);
+await mkdir(lib("inbox", "deep"), { recursive: true });
+await mkdir(lib("archive"), { recursive: true });
+await mkdir(lib(".hidden"), { recursive: true });
+await writeFile(lib("inbox", "draft.md"), "# Draft\n");
+await writeFile(lib("inbox", "deep", "inner.md"), "# Inner\n");
+await writeFile(lib("inbox", "paper.pdf"), "%PDF-1.4 pretend\n");
+await writeFile(lib("archive", "draft.md"), "# Archived draft\n");
+await writeFile(lib("taken.md"), "# Taken\n");
+await writeFile(lib(".hidden", "x.md"), "# Hidden\n");
+const trashDir = path.join(root, "Trash");
+await mkdir(trashDir);
+
 const config = await mkdtemp(path.join(tmpdir(), "glyph-cfg-"));
 const fakeLog = path.join(config, "fake-whisper.log");
 
@@ -93,6 +108,7 @@ const srv = startServer(PORT, {
   GLYPH_WHISPER_CMD: JSON.stringify([process.execPath, FAKE_WHISPER]),
   GLYPH_VOICE_TIMEOUT_MS: "1500",
   FAKE_WHISPER_LOG: fakeLog,
+  GLYPH_TRASH_DIR: trashDir,
 });
 // The finally block at the bottom covers a thrown assertion, but a signal never
 // reaches it — Ctrl-C would leave the server running and its temp root on disk.
@@ -515,6 +531,187 @@ async function main() {
   ok("a rename that only changes case works", r.status === 200 && files.has("ren/Case.md") && !files.has("ren/case.md"));
   r = await fetch(`${base}/api/rename`, { method: "POST", headers: auth(), body: "not json" });
   ok("a rename with a bad body is a 400", r.status === 400);
+
+  // ------------------------------------------------- folders, moves, trash
+  const post = (route, obj, headers = auth({ "Content-Type": "application/json" })) =>
+    fetch(`${base}/api/${route}`, { method: "POST", headers, body: JSON.stringify(obj) });
+  const there = (...p) => existsSync(lib(...p));
+  const everything = async () => (await (await fetch(`${base}/api/files`, { headers: auth() })).json());
+
+  r = await post("folder", { path: "lib/ideas" }, { "Content-Type": "application/json" });
+  ok("a new folder needs the token", r.status === 401 && !there("ideas"));
+  r = await post("folder", { path: "lib/ideas" });
+  ok("a new folder is made", r.status === 200 && (await r.json()).path === "lib/ideas" &&
+     (await stat(lib("ideas"))).isDirectory());
+  let data = await everything();
+  ok("an empty folder is in the list", Array.isArray(data.folders) && data.folders.includes("lib/ideas") &&
+     data.folders.includes("lib/inbox/deep") && !data.folders.some((f) => f.includes(".hidden")));
+  r = await post("folder", { path: "lib/ideas" });
+  ok("a folder that exists is a 409", r.status === 409);
+  r = await post("folder", { path: "lib/taken.md" });
+  ok("so is a folder over a note", r.status === 409 && (await readFile(lib("taken.md"), "utf8")) === "# Taken\n");
+  for (const [rel, why] of [
+    ["lib/a/b", "two levels at once"], ["lib/.secret", "a hidden name"], ["lib/../x", "with .. in it"],
+    ["../x", "out of the root"], ["/tmp/x", "an absolute path"], ["linkdir/x", "inside a symlinked-out folder"],
+    ["lib/.hidden/x", "inside a hidden folder"], ["lib/a\\b", "a backslash"], ["", "an empty name"],
+    ["lib/" + "x".repeat(130), "a name over 120 characters"],
+  ]) {
+    r = await post("folder", { path: rel });
+    ok(`a folder refused: ${why} (400)`, r.status === 400);
+  }
+  ok("and nothing was made outside", !existsSync(path.join(outDir, "x")));
+
+  // Moving a note between folders, and renaming it.
+  r = await post("move", { from: "lib/inbox/draft.md", to: "lib/ideas/draft.md" }, { "Content-Type": "application/json" });
+  ok("a move needs the token", r.status === 401 && there("inbox", "draft.md"));
+  r = await post("move", { from: "lib/inbox/draft.md", to: "lib/ideas/draft.md" });
+  let moved = await r.json();
+  ok("a note moves to another folder", r.status === 200 && moved.path === "lib/ideas/draft.md" &&
+     typeof moved.mtime === "number" && !there("inbox", "draft.md") &&
+     (await readFile(lib("ideas", "draft.md"), "utf8")) === "# Draft\n");
+  r = await post("move", { from: "lib/ideas/draft.md", to: "lib/archive/draft.md" });
+  ok("onto a note of the same name is a 409", r.status === 409 &&
+     (await readFile(lib("archive", "draft.md"), "utf8")) === "# Archived draft\n" && there("ideas", "draft.md"));
+  r = await post("move", { from: "lib/ideas/draft.md", to: "lib/ideas/Renamed note.md" });
+  ok("a move in place is a rename", r.status === 200 && there("ideas", "Renamed note.md") && !there("ideas", "draft.md"));
+  r = await post("move", { from: "lib/ideas/Renamed note.md", to: "lib/ideas/renamed note.md" });
+  ok("a rename that only changes case works", r.status === 200 && (await everything()).files.some((f) => f.path === "lib/ideas/renamed note.md"));
+  r = await post("move", { from: "lib/inbox/paper.pdf", to: "lib/paper.pdf" });
+  ok("a PDF can be moved (its bytes are never written)", r.status === 200 && there("paper.pdf") &&
+     (await readFile(lib("paper.pdf"), "utf8")) === "%PDF-1.4 pretend\n");
+  r = await post("move", { from: "lib/paper.pdf", to: "lib/paper.md" });
+  ok("but never turned into a note", r.status === 400 && there("paper.pdf") && !there("paper.md"));
+  r = await post("move", { from: "lib/taken.md", to: "lib/taken.sh" });
+  ok("nor a note into a script", r.status === 400 && there("taken.md"));
+  for (const [from, to, why] of [
+    ["lib/taken.md", "lib/nowhere/taken.md", "into a folder that does not exist"],
+    ["lib/taken.md", "lib/.hidden/taken.md", "into a hidden folder"],
+    ["lib/taken.md", "linkdir/taken.md", "into a symlinked-out folder"],
+    ["lib/taken.md", "../taken.md", "out of the root"],
+    ["lib/taken.md", "/tmp/taken.md", "to an absolute path"],
+    ["lib/taken.md", "lib/.taken.md", "to a hidden name"],
+    ["lib/taken.md", "taken.md/x.md", "into a file"],
+    ["lib/.hidden/x.md", "lib/x.md", "out of a hidden folder"],
+    ["escape.md", "lib/escape.md", "a symlink"],
+    ["linkdir/back.md", "lib/back.md", "a note inside a symlinked-out folder"],
+    ["photo.png", "lib/photo.png", "a file the list does not show"],
+    ["lib/taken.md", "lib", "onto a folder"],
+  ]) {
+    r = await post("move", { from, to });
+    ok(`a move refused: ${why} (400)`, r.status === 400);
+  }
+  ok("and the note stayed put", there("taken.md") && (await lstat(path.join(drafts, "escape.md"))).isSymbolicLink());
+  r = await post("move", { from: "lib/nope.md", to: "lib/nope2.md" });
+  ok("moving something missing is a 404", r.status === 404);
+
+  // Folders move too, with everything in them, but never into themselves.
+  r = await post("move", { from: "lib/inbox", to: "lib/archive/inbox" });
+  ok("a folder moves with what is inside it", r.status === 200 && there("archive", "inbox", "deep", "inner.md") && !there("inbox"));
+  r = await post("move", { from: "lib/archive", to: "lib/archive/inbox/deep/archive" });
+  ok("a folder cannot go inside itself", r.status === 400 && there("archive", "inbox", "deep", "inner.md"));
+  r = await post("move", { from: "lib/archive", to: "lib/ARCHIVE/x" });
+  ok("not even spelled in another case", r.status === 400 && there("archive"));
+  r = await post("move", { from: "lib/archive/inbox", to: "lib/Old inbox" });
+  ok("a folder can be renamed", r.status === 200 && there("Old inbox", "deep", "inner.md"));
+  r = await post("move", { from: "lib/Old inbox", to: "lib/ideas" });
+  ok("but not onto another folder", r.status === 409 && there("Old inbox") && there("ideas"));
+  r = await post("move", { from: "lib", to: "lib2" });
+  ok("a top folder can be renamed", r.status === 200 && existsSync(path.join(drafts, "lib2", "taken.md")));
+  await post("move", { from: "lib2", to: "lib" });
+  r = await post("move", { from: "", to: "x" });
+  ok("the root itself cannot be moved", r.status === 400);
+
+  // The Trash: never a delete, always somewhere it can be taken back from.
+  r = await post("trash", { path: "lib/taken.md" }, { "Content-Type": "application/json" });
+  ok("the Trash needs the token", r.status === 401 && there("taken.md"));
+  r = await post("trash", { path: "lib/taken.md" });
+  ok("a note goes to the Trash", r.status === 200 && !there("taken.md") &&
+     (await readFile(path.join(trashDir, "taken.md"), "utf8")) === "# Taken\n");
+  await writeFile(lib("taken.md"), "# Taken again\n");
+  r = await post("trash", { path: "lib/taken.md" });
+  ok("a second one of the same name keeps the first", r.status === 200 &&
+     (await readFile(path.join(trashDir, "taken.md"), "utf8")) === "# Taken\n" &&
+     (await readFile(path.join(trashDir, "taken 2.md"), "utf8")) === "# Taken again\n");
+  r = await post("trash", { path: "lib/Old inbox" });
+  ok("a folder goes to the Trash whole", r.status === 200 && !there("Old inbox") &&
+     existsSync(path.join(trashDir, "Old inbox", "deep", "inner.md")));
+  for (const [rel, why] of [
+    ["", "the root"], ["escape.md", "a symlink"], ["linkdir", "a symlinked folder"],
+    ["linkdir/back.md", "a note in a symlinked-out folder"], ["lib/.hidden", "a hidden folder"],
+    ["lib/.hidden/x.md", "a note in a hidden folder"], ["photo.png", "a file the list does not show"],
+    ["../secret.md", "something outside"],
+  ]) {
+    r = await post("trash", { path: rel });
+    ok(`the Trash refused ${why} (400)`, r.status === 400);
+  }
+  ok("and nothing outside was touched", existsSync(path.join(root, "secret.md")) && existsSync(path.join(outDir, "back.md")) &&
+     (await lstat(path.join(drafts, "linkdir"))).isSymbolicLink());
+  r = await post("trash", { path: "lib/gone.md" });
+  ok("trashing something missing is a 404", r.status === 404);
+  r = await fetch(`${base}/api/move`, { method: "POST", headers: auth(), body: "not json" });
+  ok("a move with a bad body is a 400", r.status === 400);
+
+  // Undo: only what this server just put in the Trash, only back where it was.
+  await writeFile(lib("undo-me.md"), "# Undo me\n");
+  r = await post("trash", { path: "lib/undo-me.md" });
+  const undoId = (await r.json()).undo;
+  ok("the Trash hands back a way to undo it", r.status === 200 && typeof undoId === "string" && undoId.length >= 32 &&
+     !there("undo-me.md"));
+  r = await post("untrash", { undo: undoId }, { "Content-Type": "application/json" });
+  ok("Undo needs the token", r.status === 401 && !there("undo-me.md"));
+  r = await post("untrash", { undo: undoId });
+  ok("Undo puts it back where it was", r.status === 200 && (await r.json()).path === "lib/undo-me.md" &&
+     (await readFile(lib("undo-me.md"), "utf8")) === "# Undo me\n" && !existsSync(path.join(trashDir, "undo-me.md")));
+  r = await post("untrash", { undo: undoId });
+  ok("and only once", r.status === 404);
+  r = await post("untrash", { undo: "0".repeat(32) });
+  ok("a made-up id puts nothing back", r.status === 404);
+  await writeFile(path.join(trashDir, "planted.md"), "# Something else in the Trash\n");
+  r = await post("untrash", { undo: "planted.md" });
+  ok("nothing else in the Trash can be pulled into the folder", r.status === 404 && !there("planted.md"));
+  r = await post("trash", { path: "lib/undo-me.md" });
+  const id2 = (await r.json()).undo;
+  await writeFile(lib("undo-me.md"), "# A new note of the same name\n");
+  r = await post("untrash", { undo: id2 });
+  ok("Undo never overwrites a note made since", typeof id2 === "string" && r.status === 409 &&
+     (await readFile(lib("undo-me.md"), "utf8")) === "# A new note of the same name\n");
+  await post("trash", { path: "lib/undo-me.md" });
+  r = await post("trash", { path: "lib/ideas/renamed note.md" });
+  const id3 = (await r.json()).undo;
+  await rm(path.join(trashDir, "renamed note.md"));
+  await writeFile(path.join(trashDir, "renamed note.md"), "# Put there afterwards\n");
+  r = await post("untrash", { undo: id3 });
+  ok("nor brings back something swapped in under its name", typeof id3 === "string" && r.status === 404 &&
+     !there("ideas", "renamed note.md"));
+
+  // Pins live on the Mac, follow a move, and go with the Trash.
+  await writeFile(lib("ideas", "pin-me.md"), "# Pin me\n");
+  r = await post("pin", { path: "lib/ideas/pin-me.md", pinned: true }, { "Content-Type": "application/json" });
+  ok("pinning needs the token", r.status === 401);
+  r = await post("pin", { path: "lib/ideas/pin-me.md", pinned: true });
+  const pinnedNow = async (rel) => !!(await everything()).files.find((f) => f.path === rel && f.pinned);
+  ok("a note can be pinned", r.status === 200 && (await r.json()).pinned === true && await pinnedNow("lib/ideas/pin-me.md"));
+  ok("and only that one is", (await everything()).files.filter((f) => f.pinned).length === 1);
+  const pinFiles = (await readdir(config)).filter((n) => /^pins-[0-9a-f]{12}\.json$/.test(n));
+  ok("pins are kept in Glyph's settings, never in the notes", pinFiles.length === 1 &&
+     (await readFile(lib("ideas", "pin-me.md"), "utf8")) === "# Pin me\n" &&
+     ((await stat(path.join(config, pinFiles[0]))).mode & 0o777) === 0o600);
+  r = await post("pin", { path: "lib/ideas" });
+  ok("a folder is not pinned", r.status === 400);
+  r = await post("pin", { path: "escape.md" });
+  ok("nor a symlink", r.status === 400);
+  r = await post("move", { from: "lib/ideas/pin-me.md", to: "lib/pin-me.md" });
+  ok("a pin follows its note when it moves", await pinnedNow("lib/pin-me.md") && !(await pinnedNow("lib/ideas/pin-me.md")));
+  await post("move", { from: "lib/pin-me.md", to: "lib/ideas/pin-me.md" });
+  await post("move", { from: "lib/ideas", to: "lib/Ideas2" });
+  ok("and when its folder moves", await pinnedNow("lib/Ideas2/pin-me.md"));
+  r = await post("trash", { path: "lib/Ideas2/pin-me.md" });
+  const id4 = (await r.json()).undo;
+  ok("a trashed note is no longer pinned", !(await everything()).files.some((f) => f.pinned));
+  await post("untrash", { undo: id4 });
+  ok("and Undo brings the pin back", await pinnedNow("lib/Ideas2/pin-me.md"));
+  r = await post("pin", { path: "lib/Ideas2/pin-me.md", pinned: false });
+  ok("a pin can be taken off", r.status === 200 && (await r.json()).pinned === false && !(await pinnedNow("lib/Ideas2/pin-me.md")));
 
   // ------------------------------------------------------------- /api/info
   const info = async () => (await (await fetch(`${base}/api/info`, { headers: auth() })).json()).secureOrigin;

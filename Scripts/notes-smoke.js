@@ -235,6 +235,180 @@
   await until(lib);
   ok("named after its first words", await until(() => qa(".glyph-lib-note").some((r) => /^Zebra/.test(r.dataset.path)), 5000));
 
+  // ------------------------------------------------ folders, moves, the Trash
+  const more = () => q('#glyph-nav [aria-label="More"]');
+  const menu = (label) => qa("#glyph-more .glyph-menu-item").find((b) => b.textContent === label);
+  const askShown = () => shown(q("#glyph-ask"));
+  const askButton = (label) => qa("#glyph-ask button").find((b) => b.textContent === label);
+  const folderRowIn = (name) => qa(".glyph-lib-folder").find((r) => r.dataset.folder.split("/").pop() === name);
+  const press = (el) => el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true,
+    clientX: 60, clientY: el.getBoundingClientRect().top + 20 }));
+  const nameIt = async (text, go) => {
+    const input = await until(() => askShown() && q("#glyph-ask .glyph-ask-input"));
+    input.value = text;
+    askButton(go).click();
+  };
+
+  if (!lib()) { back(); await until(lib); }
+  while (q('#glyph-nav [aria-label="Back"]') && shown(q("#glyph-nav .glyph-round")) && heading() !== "Notes") {
+    back();
+    await sleep(100);
+  }
+  ok("a folder page has a menu of its own", shown(more()) && !shown(q('#glyph-nav [aria-label="Share"]')));
+  more().click();
+  await until(() => menu("New Folder…"));
+  ok("at the top it only makes folders", !!menu("New Folder…") && !menu("Move to Trash"),
+    qa("#glyph-more .glyph-menu-item").map((b) => b.textContent).join(", "));
+  menu("New Folder…").click();
+  const nameField = await until(() => askShown() && q("#glyph-ask .glyph-ask-input"));
+  ok("New Folder asks for a name, with the field ready to type in", !!nameField && document.activeElement === nameField);
+  nameField.value = "a/b";
+  askButton("Create").click();
+  await sleep(100);
+  ok("a name with a slash is explained, not sent", askShown() && /can’t have/.test(q(".glyph-ask-note").textContent));
+  await nameIt("Projects", "Create");
+  ok("the new folder is on the page, empty", await until(() => folderRowIn("Projects")) &&
+    folderRowIn("Projects").textContent.includes("0") && !askShown());
+
+  // A note moved while an edit is still on its way: the edit goes with it.
+  q('#glyph-dock [aria-label="New note"]').click();
+  await until(() => !lib() && md().querySelector("h1"));
+  document.execCommand("insertText", false, "Move me");
+  document.execCommand("insertParagraph");
+  document.execCommand("insertText", false, "Body text");
+  back();
+  await until(lib);
+  await until(() => rowIn("Move me"), 5000);
+  await open("Move me");
+  await until(() => md().innerText.includes("Body text"));
+  typeAtEnd(" EXTRA");
+  more().click();
+  await until(() => menu("Move to…"));
+  ok("a note's menu can move, rename and trash it", !!menu("Move to…") && !!menu("Rename File…") && !!menu("Move to Trash"));
+  menu("Move to…").click();
+  await until(() => askShown() && q('.glyph-pick-row[data-folder="Projects"]'));
+  ok("the folder it is in now cannot be chosen", q('.glyph-pick-row[data-folder=""]').disabled &&
+    !q('.glyph-pick-row[data-folder="Projects"]').disabled);
+  q('.glyph-pick-row[data-folder="Projects"]').click();
+  ok("it says where the note went", await until(() => /Moved to Projects/.test(status()), 8000), status());
+  ok("and the note stays open", !lib() && md().innerText.includes("EXTRA"));
+  back();
+  await until(lib);
+  ok("Back now leads to its new folder", heading() === "Projects" && !!(await until(() => rowIn("Move me"))), heading());
+
+  more().click();
+  await until(() => menu("Rename Folder…"));
+  ok("inside a folder the menu has the folder's own actions",
+    !!menu("Rename Folder…") && !!menu("Move to…") && !!menu("Move to Trash"));
+  menu("Rename Folder…").click();
+  await nameIt("Work", "Rename");
+  ok("a renamed folder is still the page you are on", await until(() => heading() === "Work"), heading());
+  ok("and its note came along", !!(await until(() => rowIn("Move me"))) && rowIn("Move me").dataset.path === "Work/Move me.md");
+
+  press(rowIn("Move me"));
+  await until(() => menu("Rename File…"));
+  ok("a long press on a note opens its menu beside it",
+    shown(q("#glyph-more")) && Math.abs(q("#glyph-more").getBoundingClientRect().top - rowIn("Move me").getBoundingClientRect().top) < 140);
+  menu("Rename File…").click();
+  ok("renaming starts from the current name",
+    (await until(() => askShown() && q("#glyph-ask .glyph-ask-input"))).value === "Move me");
+  await nameIt("Moved note", "Rename");
+  ok("and the file takes the new one", await until(() => rowIn("Moved note"), 5000));
+
+  press(rowIn("Moved note"));
+  await until(() => menu("Move to Trash"));
+  menu("Move to Trash").click();
+  ok("a note goes to the Trash at once, without a question",
+    await until(() => !rowIn("Moved note"), 5000) && !askShown());
+  const undo = () => q("#glyph-undo");
+  ok("and offers Undo, naming it by its title", shown(undo()) && /Move me/.test(undo().textContent) && /Trash/.test(undo().textContent),
+    undo().textContent);
+  q(".glyph-undo-button").click();
+  ok("Undo puts it back", !!(await until(() => rowIn("Moved note"), 5000)) && !shown(undo()));
+
+  // A swipe to the left shows Move and Delete; all the way across deletes.
+  const pointer = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true,
+    pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x, clientY: y }));
+  const swipe = async (el, dx) => {
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    pointer(el, "pointerdown", x, y);
+    for (let i = 1; i <= 6; i++) { pointer(el, "pointermove", x + dx * i / 6, y + 1); await sleep(16); }
+    pointer(el, "pointerup", x + dx, y + 1);
+    await sleep(400);
+  };
+  const wrapOf = (row) => row.closest(".glyph-swipe");
+  await swipe(rowIn("Moved note"), -120);
+  ok("a swipe to the left opens Move and Delete", shown(wrapOf(rowIn("Moved note")).querySelector(".glyph-swipe-delete")) &&
+    shown(wrapOf(rowIn("Moved note")).querySelector(".glyph-swipe-move")) &&
+    Math.round(rowIn("Moved note").getBoundingClientRect().left) < 0, rowIn("Moved note").style.transform);
+  rowIn("Moved note").click();
+  await sleep(300);
+  ok("a tap on the open row only closes it", lib() && !rowIn("Moved note").style.transform);
+  await swipe(rowIn("Moved note"), -40);
+  ok("a short swipe springs back", !rowIn("Moved note").style.transform);
+  await swipe(rowIn("Moved note"), -380);
+  ok("a swipe all the way across deletes it", await until(() => !rowIn("Moved note"), 5000) && shown(undo()));
+
+  back();
+  await until(() => heading() === "Notes");
+
+  // A swipe to the right pins a note: Pinned is the first section on its page.
+  await until(() => rowIn("Grocery list"));
+  await swipe(rowIn("Grocery list"), 120);
+  const pinButton = await until(() => wrapOf(rowIn("Grocery list")).querySelector(".glyph-swipe-pin"));
+  ok("a swipe to the right shows Pin", shown(pinButton) && pinButton.getAttribute("aria-label") === "Pin");
+  pinButton.click();
+  const pinnedHead = () => qa(".glyph-lib-when").find((h) => h.textContent === "Pinned");
+  ok("a pinned note heads its folder", !!(await until(pinnedHead, 5000)) &&
+    pinnedHead().nextElementSibling.querySelector(".glyph-lib-note").dataset.path === "Grocery list.md" &&
+    qa(".glyph-lib-note").filter((r) => r.dataset.path === "Grocery list.md").length === 1);
+  await until(() => rowIn("Grocery list 2"));
+  await swipe(rowIn("Grocery list 2"), 330);
+  ok("a swipe all the way across pins at once", await until(() => pinnedHead() &&
+    pinnedHead().nextElementSibling.querySelectorAll(".glyph-lib-note").length === 2, 5000));
+  press(rowIn("Grocery list 2"));
+  await until(() => menu("Unpin"));
+  menu("Unpin").click();
+  ok("the menu unpins", await until(() => pinnedHead() &&
+    pinnedHead().nextElementSibling.querySelectorAll(".glyph-lib-note").length === 1, 5000));
+  ok("a folder has nothing to pin", (await (async () => {
+    await swipe(folderRowIn("drafts"), 120);
+    return !folderRowIn("drafts").style.transform && !wrapOf(folderRowIn("drafts")).querySelector(".glyph-swipe-pin");
+  })()));
+  await swipe(folderRowIn("drafts"), -120);
+  wrapOf(folderRowIn("drafts")).querySelector(".glyph-swipe-delete").click();
+  ok("a folder with notes in it asks before the Trash",
+    /the 2 files in it/.test((await until(() => askShown() && q(".glyph-ask-text"))).textContent));
+  askButton("Cancel").click();
+  await sleep(200);
+  ok("and Cancel keeps it", !askShown() && !!folderRowIn("drafts"));
+
+  more().click();
+  menu("New Folder…").click();
+  await nameIt("Inbox", "Create");
+  await until(() => folderRowIn("Inbox"));
+  more().click();
+  menu("New Folder…").click();
+  await nameIt("Archive", "Create");
+  await until(() => folderRowIn("Archive"));
+  press(folderRowIn("Inbox"));
+  await until(() => menu("Move to…"));
+  menu("Move to…").click();
+  await until(() => askShown() && q('.glyph-pick-row[data-folder="Archive"]'));
+  ok("a folder cannot be moved into itself, or to where it is",
+    q('.glyph-pick-row[data-folder="Inbox"]').disabled && q('.glyph-pick-row[data-folder=""]').disabled);
+  q('.glyph-pick-row[data-folder="Archive"]').click();
+  ok("a folder moves into another", await until(() => !folderRowIn("Inbox"), 5000));
+  folderRowIn("Archive").click();
+  ok("and is found inside it", !!(await until(() => folderRowIn("Inbox"))));
+  back();
+  await until(() => heading() === "Notes");
+  press(folderRowIn("Work"));
+  await until(() => menu("Move to Trash"));
+  menu("Move to Trash").click();
+  ok("an empty folder goes to the Trash without a question", await until(() => !folderRowIn("Work"), 5000) && !askShown());
+
   ok("no page errors", errors.length === 0, errors.join(" | "));
   ok("nothing was reported as going wrong", reports.length === 0, reports.join(" | "));
   ok("the security policy refused nothing", blocked.length === 0, blocked.slice(0, 3).join(" | "));

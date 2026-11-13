@@ -673,7 +673,7 @@
      Folders and notes are pages of their own. A note opens full screen, with Back,
      Share and a menu at the top and a short bar of tools floating at the bottom.
      Everything here is scoped to body.glyph-server, so no other build sees it. */
-  #glyph-nav, #glyph-dock, #glyph-library, .glyph-sheet, #glyph-more, #glyph-scrim { display: none; }
+  #glyph-nav, #glyph-dock, #glyph-library, .glyph-sheet, #glyph-more, #glyph-scrim, #glyph-ask { display: none; }
   body.glyph-server {
     --surface: rgba(var(--fg-rgb), 0.06);
     --surface-press: rgba(var(--fg-rgb), 0.12);
@@ -763,6 +763,78 @@
     cursor: pointer;
   }
   .glyph-lib-row:active { background: var(--surface-press); }
+  .glyph-lib-row, .glyph-side-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  /* Swiping a row, as in Notes: left for Move and Delete, right for Pin. The row
+     is opaque, in the group's own color, so the buttons only show as it slides. */
+  .glyph-swipe { position: relative; overflow: hidden; }
+  .glyph-swipe > .glyph-lib-row {
+    touch-action: pan-y;
+    background-color: var(--bg);
+    background-image: linear-gradient(var(--surface), var(--surface));
+  }
+  .glyph-swipe > .glyph-lib-row:active {
+    background-color: var(--bg);
+    background-image: linear-gradient(var(--surface-press), var(--surface-press));
+  }
+  .glyph-swipe-animate > .glyph-lib-row { transition: transform 0.22s ease; }
+  .glyph-swipe + .glyph-swipe::before {
+    content: "";
+    position: absolute;
+    top: 0; right: 0; left: 16px;
+    z-index: 1;
+    border-top: 1px solid var(--border);
+  }
+  .glyph-swipe-folder + .glyph-swipe-folder::before { left: 56px; }
+  .glyph-swipe-acts { position: absolute; top: 0; bottom: 0; display: flex; visibility: hidden; }
+  .glyph-swipe-lead { left: 0; }
+  .glyph-swipe-trail { right: 0; }
+  .glyph-swipe-right .glyph-swipe-lead, .glyph-swipe-left .glyph-swipe-trail { visibility: visible; }
+  .glyph-swipe-act {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 74px;
+    padding: 0;
+    border: 0;
+    color: #fff;
+    cursor: pointer;
+  }
+  .glyph-swipe-act svg { width: 24px; height: 24px; }
+  .glyph-swipe-lead .glyph-swipe-act:first-child, .glyph-swipe-trail .glyph-swipe-act:last-child { flex: 1 0 74px; }
+  .glyph-swipe-pin { background: #f59e0b; }
+  .glyph-swipe-move { background: var(--accent); }
+  .glyph-swipe-delete { background: #e5484d; }
+  /* "Moved to the Trash", with Undo. */
+  #glyph-undo { display: none; }
+  body.glyph-server #glyph-undo.glyph-shown {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--dock-lift, 0px) + max(14px, env(safe-area-inset-bottom)) + 66px);
+    z-index: 53;
+    max-width: calc(100% - 32px);
+    box-sizing: border-box;
+    padding: 4px 4px 4px 18px;
+    border-radius: 24px;
+    transform: translateX(-50%);
+    color: var(--fg);
+    font: 15px var(--chrome-font);
+  }
+  .glyph-undo-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .glyph-undo-button {
+    flex: none;
+    height: 38px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 19px;
+    background: none;
+    color: var(--accent);
+    font: 600 15px var(--chrome-font);
+    cursor: pointer;
+  }
   .glyph-lib-row + .glyph-lib-row::before {
     content: "";
     position: absolute;
@@ -878,7 +950,9 @@
     -webkit-user-select: none;
   }
   body.glyph-server[data-overlay="format"] #glyph-format,
-  body.glyph-server[data-overlay="voice"] #glyph-voice { display: block; }
+  body.glyph-server[data-overlay="voice"] #glyph-voice,
+  body.glyph-server[data-overlay="ask"] #glyph-ask { display: block; }
+  body.glyph-server[data-overlay="ask"] #glyph-scrim { background: rgba(0, 0, 0, 0.3); }
   .glyph-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .glyph-sheet-title { font-size: 19px; font-weight: 600; }
   .glyph-sheet-head .glyph-round { width: 38px; height: 38px; }
@@ -951,6 +1025,62 @@
   .glyph-menu-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px 0 18px; }
   .glyph-menu-row + .glyph-menu-row, .glyph-menu-item + .glyph-menu-row { border-top: 1px solid var(--border); }
   .glyph-menu-label { flex: 1; font-size: 15px; color: var(--muted); }
+  .glyph-menu-sep { height: 1px; margin: 5px 0; background: var(--border); }
+  .glyph-menu-item.glyph-danger, .glyph-menu-item.glyph-danger svg { color: #e5484d; }
+
+  /* Asking for a name, a folder, or a yes. */
+  .glyph-ask-input {
+    box-sizing: border-box;
+    width: 100%;
+    height: 48px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    outline: none;
+    background: var(--bg);
+    color: var(--fg);
+    font: 17px var(--chrome-font);
+    /* Safari will not type into a field whose parent forbids selection. */
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .glyph-ask-input:focus { border-color: var(--accent); }
+  .glyph-ask-note { min-height: 18px; margin: 8px 2px 14px; color: var(--muted); font-size: 14px; line-height: 1.35; }
+  .glyph-ask-warn { color: #e5484d; }
+  .glyph-ask-text { margin: 0 2px 18px; font-size: 16px; line-height: 1.4; }
+  .glyph-ask-actions { display: flex; gap: 10px; }
+  .glyph-ask-button {
+    flex: 1;
+    height: 48px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--fg);
+    font: 600 17px var(--chrome-font);
+    cursor: pointer;
+  }
+  .glyph-ask-primary { background: var(--accent); color: #fff; }
+  .glyph-ask-danger { background: #e5484d; color: #fff; }
+  .glyph-pick { max-height: min(55vh, 440px); margin: 0 -6px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .glyph-pick-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 46px;
+    padding: 0 12px 0 calc(12px + var(--depth, 0) * 16px);
+    border: 0;
+    border-radius: 10px;
+    background: none;
+    color: var(--fg);
+    font: 17px var(--chrome-font);
+    text-align: left;
+    cursor: pointer;
+  }
+  .glyph-pick-row svg { width: 22px; height: 22px; flex: none; color: var(--accent); }
+  .glyph-pick-row:disabled { opacity: 0.35; cursor: default; }
+  .glyph-pick-row:not(:disabled):active { background: var(--surface-press); }
   .glyph-menu-row .glyph-seg { flex: 0 0 auto; }
   .glyph-menu-row .glyph-seg button { height: 38px; padding: 0 12px; font: 600 14px var(--chrome-font); }
 
@@ -1007,11 +1137,32 @@
     font-family: var(--chrome-font);
   }
   .glyph-lib-side {
-    overflow-y: auto;
-    padding: max(12px, calc(var(--glyph-top) + 10px)) 10px 24px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     background: var(--surface);
     border-right: 1px solid var(--border);
   }
+  .glyph-side-list { flex: 1; min-height: 0; overflow-y: auto; padding: max(12px, calc(var(--glyph-top) + 10px)) 10px 12px; }
+  .glyph-side-foot { padding: 6px 10px 10px; }
+  .glyph-side-new {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--muted);
+    font: 15px var(--chrome-font);
+    cursor: pointer;
+  }
+  .glyph-side-new:hover { color: var(--fg); }
+  .glyph-side-new svg { width: 19px; height: 19px; flex: none; }
+  .glyph-side-row.glyph-drop { box-shadow: inset 0 0 0 2px var(--accent); }
+  .glyph-dragging { opacity: 0.45; }
   .glyph-side-row {
     display: flex;
     align-items: center;
@@ -1078,7 +1229,16 @@
   }
   body.glyph-server.glyph-wide #glyph-raw { left: var(--panes-w); width: auto; }
   body.glyph-server.glyph-wide .glyph-sheet { left: calc(var(--panes-w) + 16px); }
+  /* A question is the whole window's, so it sits in the middle of it. */
+  body.glyph-server.glyph-wide #glyph-ask { left: 16px; right: 16px; top: 16vh; bottom: auto; max-width: 440px; }
+  .glyph-wide .glyph-pick-row { min-height: 34px; font-size: 15px; }
+  .glyph-wide .glyph-pick-row svg { width: 19px; height: 19px; }
+  /* A right-click menu is a Mac menu: small. */
+  body.glyph-server.glyph-wide #glyph-more.glyph-context { width: 230px; padding: 5px 0; border-radius: 10px; }
+  body.glyph-server.glyph-wide #glyph-more.glyph-context .glyph-menu-item { min-height: 30px; padding: 0 12px; gap: 9px; font-size: 14px; }
+  body.glyph-server.glyph-wide #glyph-more.glyph-context .glyph-menu-item svg { width: 17px; height: 17px; }
   body.glyph-server.glyph-wide #glyph-status { left: calc(50% + var(--panes-w) / 2); }
+  body.glyph-server.glyph-wide #glyph-undo.glyph-shown { left: calc(50% + var(--panes-w) / 2); bottom: 24px; }
 
   /* A PDF takes the document pane's place. The toolbar row goes with it, since
      every button on it edits text; the tab strip stays, and syncBarHeight moves
@@ -3989,6 +4149,11 @@ window.__glyphInstallChrome = function () {
     mic: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><line x1="12" y1="17.5" x2="12" y2="21"/>'),
     compose: svg('<path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12.5 14.5 9 15.5l1-3.5z"/>'),
     close: svg('<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>'),
+    newFolder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>'),
+    move: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="12.5 11 15.5 14 12.5 17"/><line x1="8" y1="14" x2="15.5" y2="14"/>'),
+    rename: svg('<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/><line x1="14" y1="6" x2="17" y2="9"/>'),
+    pin: svg('<path d="M9 3.5h6l-1 5.5 3.5 3.5v1.5h-11V12.5L10 9z"/><line x1="12" y1="14" x2="12" y2="20.5"/>'),
+    trash: svg('<line x1="4" y1="7" x2="20" y2="7"/><path d="M6.5 7l1 13h9l1-13"/><path d="M9.5 7V4h5v3"/>'),
     numbers: svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 5h1.5v4"/><path d="M3.5 13.5a1.5 1.5 0 0 1 3 .2c0 1-3 2-3 3.3h3"/>'),
   };
   const roundButton = (icon, label, cls) => {
@@ -4042,20 +4207,55 @@ window.__glyphInstallChrome = function () {
   voiceSheet.id = "glyph-voice";
   const moreMenu = elem("div", "glyph-float");
   moreMenu.id = "glyph-more";
+  // Asks one thing: a name, a folder to move to, or whether to use the Trash.
+  const askSheet = elem("div", "glyph-sheet glyph-float");
+  askSheet.id = "glyph-ask";
+  // "Moved to the Trash", with a way back, for a few seconds.
+  const undoBar = elem("div", "glyph-float");
+  undoBar.id = "glyph-undo";
+  const undoText = elem("span", "glyph-undo-text");
+  const undoButton = elem("button", "glyph-undo-button", "Undo");
+  undoButton.addEventListener("mousedown", (e) => e.preventDefault());
+  undoBar.append(undoText, undoButton);
 
   const pdfHost = document.createElement("div");
   pdfHost.id = "glyph-pdf";
   const bookHost = document.createElement("div");
   bookHost.id = "glyph-book";
   if (serverHost()) {
-    document.body.append(library, pdfHost, bookHost, nav, dock, scrim, formatSheet, voiceSheet, moreMenu);
+    document.body.append(library, pdfHost, bookHost, nav, dock, scrim, formatSheet, voiceSheet, moreMenu, askSheet, undoBar);
   }
 
   let serverFiles = [];
+  let serverFolders = [];   // every folder, empty ones included
+  let askResolve = null;    // the open question sheet's answer
+  let dragging = null;      // what is being dragged in a wide window
+  let openSwipe = null;     // the phone row swiped open, showing its buttons
+  let swallowTapUntil = 0;  // a tap that only closed a swiped row opens nothing
+  let undoAction = null;
+  let undoTimer = null;
   let rootName = "Notes";
   let libraryPath = "";
   let libraryProblem = null;
   const folderOf = (p) => (p.lastIndexOf("/") < 0 ? "" : p.slice(0, p.lastIndexOf("/")));
+  const baseName = (p) => p.slice(p.lastIndexOf("/") + 1);
+  const inside = (p, folder) => !!folder && (p === folder || p.startsWith(folder + "/"));
+  // Folders in tree order: a folder, then what is inside it, then the next.
+  function byPath(a, b) {
+    const x = a.split("/"), y = b.split("/");
+    for (let i = 0; i < Math.min(x.length, y.length); i++) {
+      const c = x[i].localeCompare(y[i], undefined, { numeric: true, sensitivity: "base" });
+      if (c) return c;
+    }
+    return x.length - y.length;
+  }
+  // Every folder: the ones the Mac listed (an empty one has no notes to show
+  // it) and every folder a note sits in.
+  function knownFolders() {
+    const all = new Set(serverFolders);
+    serverFiles.forEach((f) => { for (let p = folderOf(f.path); p; p = folderOf(p)) all.add(p); });
+    return [...all].sort(byPath);
+  }
   // A wide window shows everything at once, as Notes on a Mac does: every folder
   // on the left, the chosen folder's notes beside it, and the note on the right.
   // Below that width it is the phone's one page at a time.
@@ -4090,6 +4290,7 @@ window.__glyphInstallChrome = function () {
       else {
         const data = await res.json();
         serverFiles = data.files || [];
+        serverFolders = data.folders || [];
         rootName = data.root || rootName;
         libraryProblem = null;
       }
@@ -4140,7 +4341,8 @@ window.__glyphInstallChrome = function () {
     if (tail) sub.appendChild(elem("span", "glyph-lib-preview", tail));
     b.appendChild(sub);
     b.addEventListener("click", () => openFromServer(f.path));
-    return b;
+    itemControls(b, f.path, false);
+    return swipeRow(b, f.path, false);
   }
   function folderRow(path, count) {
     const b = elem("button", "glyph-lib-row glyph-lib-folder");
@@ -4156,7 +4358,19 @@ window.__glyphInstallChrome = function () {
       library.scrollTop = 0;
       paintChrome();
     });
-    return b;
+    itemControls(b, path, true);
+    return swipeRow(b, path, true);
+  }
+
+  // Pinned notes first, as in Notes, and the rest by date. Returns the rest.
+  function appendPinned(into, files) {
+    const pinned = files.filter((f) => f.pinned).sort((a, b) => b.mtime - a.mtime);
+    if (!pinned.length) return files;
+    into.appendChild(elem("h2", "glyph-lib-when glyph-lib-pinned", "Pinned"));
+    const group = elem("div", "glyph-lib-group");
+    pinned.forEach((f) => group.appendChild(noteRow(f, false)));
+    into.appendChild(group);
+    return files.filter((f) => !f.pinned);
   }
 
   // Notes newest first, under Today, Yesterday, the last week and month, then
@@ -4191,6 +4405,14 @@ window.__glyphInstallChrome = function () {
   const listRows = elem("div", "glyph-lib-rows");
   listHead.append(listTitle, listCount);
   listPane.append(listHead, listRows);
+  const sideList = elem("div", "glyph-side-list");
+  const newFolderButton = elem("button", "glyph-side-new");
+  newFolderButton.innerHTML = UI.newFolder;
+  newFolderButton.appendChild(elem("span", "", "New Folder"));
+  newFolderButton.addEventListener("click", () => newFolder(libraryPath));
+  const sideFoot = elem("div", "glyph-side-foot");
+  sideFoot.appendChild(newFolderButton);
+  sidePane.append(sideList, sideFoot);
   function sideRow(path, name, count, depth) {
     const b = elem("button", "glyph-side-row");
     b.dataset.folder = path;
@@ -4206,6 +4428,8 @@ window.__glyphInstallChrome = function () {
       listRows.scrollTop = 0;
       paintChrome();
     });
+    itemControls(b, path, true);
+    dropTarget(b, path);
     return b;
   }
   function renderWide() {
@@ -4219,10 +4443,10 @@ window.__glyphInstallChrome = function () {
         if (!p) break;
       }
     });
-    sidePane.replaceChildren(sideRow("", rootName, counts.get("") || 0, 0));
-    [...counts.keys()].filter(Boolean)
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
-      .forEach((p) => sidePane.appendChild(sideRow(p, p.slice(p.lastIndexOf("/") + 1), counts.get(p), p.split("/").length)));
+    knownFolders().forEach((p) => { if (!counts.has(p)) counts.set(p, 0); });
+    sideList.replaceChildren(sideRow("", rootName, counts.get("") || 0, 0));
+    [...counts.keys()].filter(Boolean).sort(byPath)
+      .forEach((p) => sideList.appendChild(sideRow(p, baseName(p), counts.get(p), p.split("/").length)));
     const query = searchInput.value.trim().toLowerCase();
     listRows.replaceChildren();
     if (libraryProblem && !serverFiles.length) {
@@ -4239,7 +4463,7 @@ window.__glyphInstallChrome = function () {
       files.slice(0, 200).forEach((f) => group.appendChild(noteRow(f, true)));
       listRows.appendChild(group);
     } else {
-      appendGroups(listRows, files, false);
+      appendGroups(listRows, appendPinned(listRows, files), false);
     }
     paintSelection();
   }
@@ -4261,6 +4485,7 @@ window.__glyphInstallChrome = function () {
   if (serverHost()) wideQuery.addEventListener("change", useWidth);
 
   function renderLibrary() {
+    openSwipe = null;
     if (wide()) { renderWide(); return; }
     if (library.firstChild !== libraryInner) library.replaceChildren(libraryInner);
     const into = libraryInner;
@@ -4292,6 +4517,7 @@ window.__glyphInstallChrome = function () {
       if (cut < 0) here.push(f);
       else folders.set(prefix + rest.slice(0, cut), (folders.get(prefix + rest.slice(0, cut)) || 0) + 1);
     });
+    knownFolders().forEach((p) => { if (folderOf(p) === libraryPath && !folders.has(p)) folders.set(p, 0); });
     const counts = [];
     if (folders.size) counts.push(plural(folders.size, "folder", "folders"));
     if (here.length || !folders.size) counts.push(plural(here.length, "note", "notes"));
@@ -4299,11 +4525,11 @@ window.__glyphInstallChrome = function () {
     if (folders.size) {
       const group = elem("div", "glyph-lib-group");
       [...folders.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: "base" }))
+        .sort((a, b) => byPath(a[0], b[0]))
         .forEach(([path, count]) => group.appendChild(folderRow(path, count)));
       into.appendChild(group);
     }
-    appendGroups(into, here, false);
+    appendGroups(into, appendPinned(into, here), false);
     if (!folders.size && !here.length) into.appendChild(elem("p", "glyph-lib-empty", "Nothing here yet."));
   }
   searchInput.addEventListener("input", () => { renderLibrary(); library.scrollTop = 0; });
@@ -4980,8 +5206,9 @@ window.__glyphInstallChrome = function () {
     document.body.classList.toggle("glyph-no-doc", !d);
     if (wide()) paintSelection();
     // A book has its own Aa; a PDF has only the menu, for one or two pages.
-    navPill.hidden = atLibrary || !d || !!d.book;
-    shareButton.hidden = kind === "file";
+    // On a folder page "..." holds the folder's own actions.
+    navPill.hidden = atLibrary ? !!searchInput.value.trim() : !d || !!d.book;
+    shareButton.hidden = atLibrary || kind === "file";
     doneButton.hidden = atLibrary || !document.body.classList.contains("glyph-editing");
     backButton.setAttribute("aria-label", atLibrary ? "Back" : "Back to " + (libraryLabelFor(d) || rootName));
     if (d && !atLibrary) document.title = d.name + " — Glyph";
@@ -5189,11 +5416,14 @@ window.__glyphInstallChrome = function () {
   function closeOverlay() {
     if (document.body.dataset.overlay === "voice") cancelVoice();
     delete document.body.dataset.overlay;
+    moreMenu.removeAttribute("style");
+    moreMenu.classList.remove("glyph-context");
+    if (askResolve) { const r = askResolve; askResolve = null; r(null); }
   }
   scrim.addEventListener("click", closeOverlay);
 
-  function menuItem(label, icon, fn) {
-    const b = elem("button", "glyph-menu-item");
+  function menuItem(label, icon, fn, cls) {
+    const b = elem("button", "glyph-menu-item" + (cls ? " " + cls : ""));
     b.innerHTML = icon || "";
     b.appendChild(elem("span", "", label));
     b.addEventListener("mousedown", (e) => e.preventDefault());
@@ -5229,6 +5459,11 @@ window.__glyphInstallChrome = function () {
                    ["One", "One page", set("one"), spread === "one"],
                    ["Two", "Two pages side by side", set("two"), spread === "two"]]));
       moreMenu.appendChild(pages);
+      if (d.serverPath) moreMenu.append(elem("div", "glyph-menu-sep"), ...fileItems(d.serverPath));
+      return;
+    }
+    if (inLibrary()) {
+      moreMenu.append(...folderItems(libraryPath));
       return;
     }
     moreMenu.appendChild(menuItem("Copy as Markdown", ICON.copy, () => doCopy("all")));
@@ -5236,6 +5471,7 @@ window.__glyphInstallChrome = function () {
       const raw = document.body.classList.contains("glyph-raw");
       moreMenu.appendChild(menuItem(raw ? "Show Formatted" : "Show Markdown", ICON.raw, toggleRaw));
     }
+    if (d && d.serverPath) moreMenu.append(elem("div", "glyph-menu-sep"), ...fileItems(d.serverPath));
     const size = elem("div", "glyph-menu-row");
     size.append(elem("span", "glyph-menu-label", "Text size"),
       segmented([["A−", "Smaller text", () => nudgeReaderSize(-1)], ["A+", "Larger text", () => nudgeReaderSize(1)]]));
@@ -5262,6 +5498,481 @@ window.__glyphInstallChrome = function () {
     const savedLook = localStorage.getItem("glyphTheme");
     if (serverHost() && savedLook) window.glyphSetTheme(savedLook);
   } catch (e) { /* private mode */ }
+
+  /* ---------- folders: make, move, rename, and the Trash ----------
+     Everything here asks the Mac (/api/folder, /api/move, /api/trash), which
+     refuses anything outside the Writing folder. Nothing is ever deleted: the
+     Trash is the Mac's own, so whatever goes there can be taken back. */
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const folderLabel = (p) => (p ? baseName(p) : rootName);
+  function itemLabel(path, isDir) {
+    if (isDir) return folderLabel(path);
+    const f = serverFiles.find((x) => x.path === path);
+    return f ? f.title || fileLabel(f.name) : fileLabel(baseName(path));
+  }
+
+  // One question at a time, answered by a button or by closing the sheet (null).
+  function ask(title, build) {
+    return new Promise((resolve) => {
+      closeOverlay();
+      askResolve = resolve;
+      const head = elem("div", "glyph-sheet-head");
+      const close = roundButton(UI.close, "Cancel");
+      close.addEventListener("click", () => answer(null));
+      head.append(elem("span", "glyph-sheet-title", title), close);
+      askSheet.replaceChildren(head);
+      const focus = build(askSheet);
+      overlay("ask");
+      // Within the tap that asked, or an iPhone will not raise the keyboard.
+      if (focus) { focus.focus(); if (focus.select) focus.select(); }
+    });
+  }
+  function answer(value) {
+    const r = askResolve;
+    askResolve = null;
+    if (document.body.dataset.overlay === "ask") delete document.body.dataset.overlay;
+    if (document.activeElement && askSheet.contains(document.activeElement)) document.activeElement.blur();
+    if (r) r(value);
+  }
+  askSheet.addEventListener("keydown", (e) => { if (e.key === "Escape") answer(null); });
+  function askButtons(cancelLabel, goLabel, goClass, onGo) {
+    const row = elem("div", "glyph-ask-actions");
+    const cancel = elem("button", "glyph-ask-button", cancelLabel);
+    const go = elem("button", "glyph-ask-button " + goClass, goLabel);
+    cancel.addEventListener("click", () => answer(null));
+    go.addEventListener("click", onGo);
+    row.append(cancel, go);
+    return row;
+  }
+  function nameProblem(v) {
+    if (!v) return "Type a name.";
+    if (/[\/\\:]/.test(v)) return "A name can’t have / \\ or : in it.";
+    if (v.startsWith(".")) return "A name can’t start with a dot.";
+    if (/[\u0000-\u001f\u007f]/.test(v)) return "That name has a character a file can’t use.";
+    if ([...v].length > 120) return "That name is too long.";
+    return null;
+  }
+  function askName(title, value, goLabel, note) {
+    return ask(title, (sheet) => {
+      const input = elem("input", "glyph-ask-input");
+      input.type = "text";
+      input.value = value || "";
+      input.setAttribute("aria-label", title);
+      input.setAttribute("autocomplete", "off");
+      input.setAttribute("enterkeyhint", "done");
+      input.spellcheck = false;
+      const msg = elem("p", "glyph-ask-note", note || "");
+      const submit = () => {
+        const v = input.value.trim();
+        const why = nameProblem(v);
+        if (why) { msg.textContent = why; msg.classList.add("glyph-ask-warn"); input.focus(); return; }
+        answer(v);
+      };
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+      sheet.append(input, msg, askButtons("Cancel", goLabel, "glyph-ask-primary", submit));
+      return input;
+    });
+  }
+  function askConfirm(title, message, goLabel) {
+    return ask(title, (sheet) => {
+      sheet.append(elem("p", "glyph-ask-text", message),
+                   askButtons("Cancel", goLabel, "glyph-ask-danger", () => answer(true)));
+      return null;
+    });
+  }
+  // Where to? Every folder, with the one it is in now and (for a folder) itself
+  // and everything inside it greyed out.
+  function pickFolder(path, isDir) {
+    return ask("Move “" + itemLabel(path, isDir) + "”", (sheet) => {
+      const list = elem("div", "glyph-pick");
+      [""].concat(knownFolders()).forEach((p) => {
+        const b = elem("button", "glyph-pick-row");
+        b.dataset.folder = p;
+        b.innerHTML = UI.folder;
+        b.appendChild(elem("span", "glyph-lib-name", folderLabel(p)));
+        b.style.setProperty("--depth", String(p ? Math.min(p.split("/").length, 6) : 0));
+        if (p === folderOf(path) || (isDir && inside(p, path))) b.disabled = true;
+        b.addEventListener("click", () => answer(p));
+        list.appendChild(b);
+      });
+      sheet.appendChild(list);
+      return null;
+    });
+  }
+
+  async function folderApi(route, body, name) {
+    let res;
+    try {
+      res = await glyphApi("/api/" + route, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      flash("Offline. The computer is not reachable");
+      return null;
+    }
+    if (res.ok) return res.json().catch(() => ({}));
+    if (res.status === 409) flash("There is already something called “" + name + "” there");
+    else if (res.status === 401) flash("Not paired any more. Open the link from the Mac again");
+    else if (res.status === 404) { flash("That is not there any more"); loadServerList(); }
+    else flash("Could not do that. Nothing was changed");
+    return null;
+  }
+
+  const openUnder = (path, isDir) =>
+    docs.filter((d) => d.serverPath && (isDir ? inside(d.serverPath, path) : d.serverPath === path));
+  // Before a file moves, every edit to it reaches the Mac first: a save still on
+  // its way would otherwise land at the old name and bring the file back there.
+  async function settle(list, path, isDir) {
+    if (list.includes(active())) captureActive();
+    for (const d of docs) if (d.committing && isDir && inside(d.freshFolder || "", path)) await d.committing;
+    for (const d of list) {
+      for (let i = 0; d.saving && i < 300; i++) await pause(50);
+      if (d.saveTimer) { clearTimeout(d.saveTimer); d.saveTimer = null; }
+      if (d.retryTimer) { clearTimeout(d.retryTimer); d.retryTimer = null; }
+      if (d.pendingSave && !d.conflict) await flushServerSave(d);
+      if (d.pendingSave || d.saving) {
+        flash("An edit hasn’t reached the Mac yet. Try again once it has");
+        if (d.pendingSave && !d.conflict) scheduleServerRetry(d);
+        return false;
+      }
+    }
+    return true;
+  }
+  // What was open, kept as a draft, or remembered as a book's place follows the
+  // file to its new name.
+  function repath(from, to, isDir) {
+    const swap = (p) => (p === from ? to : isDir && inside(p, from) ? to + p.slice(from.length) : null);
+    docs.forEach((d) => {
+      const n = d.serverPath && swap(d.serverPath);
+      if (n) { d.serverPath = n; d.name = baseName(n); }
+      if (isDir && d.isFresh && d.freshFolder) d.freshFolder = swap(d.freshFolder) || d.freshFolder;
+    });
+    const drafts = readDrafts();
+    let moved = false;
+    Object.keys(drafts).forEach((k) => {
+      const n = swap(k);
+      if (n) { drafts[n] = drafts[k]; delete drafts[k]; moved = true; }
+    });
+    if (moved) writeDrafts(drafts);
+    try {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+      keys.filter((k) => k && k.startsWith("glyphBookAt:")).forEach((k) => {
+        const n = swap(k.slice(12));
+        if (n) { localStorage.setItem("glyphBookAt:" + n, localStorage.getItem(k)); localStorage.removeItem(k); }
+      });
+    } catch (e) { /* private mode */ }
+    if (isDir && inside(libraryPath, from)) libraryPath = to + libraryPath.slice(from.length);
+  }
+
+  async function relocate(path, isDir, to) {
+    if (to === path) return false;
+    const list = openUnder(path, isDir);
+    if (!(await settle(list, path, isDir))) return false;
+    const out = await folderApi("move", { from: path, to }, baseName(to));
+    if (!out) return false;
+    repath(path, out.path || to, isDir);
+    if (!isDir && typeof out.mtime === "number") list.forEach((d) => { d.mtime = out.mtime; });
+    await loadServerList();
+    paintChrome();
+    return true;
+  }
+  async function moveItem(path, isDir, folder) {
+    if (folder === folderOf(path) || (isDir && inside(folder, path))) return;
+    if (await relocate(path, isDir, (folder ? folder + "/" : "") + baseName(path))) {
+      flash("Moved to " + folderLabel(folder));
+    }
+  }
+  async function chooseFolderFor(path, isDir) {
+    const folder = await pickFolder(path, isDir);
+    if (folder != null) moveItem(path, isDir, folder);
+  }
+  async function renameItem(path, isDir) {
+    const name = baseName(path);
+    const ext = isDir ? "" : (/\.[^./]+$/.exec(name) || [""])[0];
+    const now = ext ? name.slice(0, -ext.length) : name;
+    const note = isDir || isPdfName(name) || isBookName(name) ? "" :
+      "The note’s file name on your Mac. The list shows its first line.";
+    let typed = await askName(isDir ? "Rename Folder" : "Rename File", now, "Rename", note);
+    if (typed == null) return;
+    if (ext && typed.toLowerCase().endsWith(ext.toLowerCase())) typed = typed.slice(0, -ext.length).trim();
+    if (!typed || typed === now) return;
+    if (await relocate(path, isDir, (folderOf(path) ? folderOf(path) + "/" : "") + typed + ext)) flash("Renamed");
+  }
+  async function trashItem(path, isDir) {
+    const label = itemLabel(path, isDir);
+    // A note, or an empty folder, goes at once and can be undone; a folder with
+    // files in it asks first, since that is a lot to lose by a slip.
+    const n = isDir ? serverFiles.filter((f) => inside(f.path, path)).length : 0;
+    if (n) {
+      const yes = await askConfirm("Move “" + label + "” to the Trash?",
+        (n === 1 ? "This folder and the file in it go" : "This folder and the " + n + " files in it go") +
+        " to the Trash on your Mac, where you can take them back out.", "Move to Trash");
+      if (!yes) return;
+    }
+    const list = openUnder(path, isDir);
+    if (!(await settle(list, path, isDir))) return;
+    const out = await folderApi("trash", { path }, label);
+    if (!out) return;
+    const wasShowing = list.includes(active());
+    list.forEach((d) => { clearDraft(d); dropDoc(d); });
+    const drafts = readDrafts();
+    Object.keys(drafts).forEach((k) => { if (isDir ? inside(k, path) : k === path) delete drafts[k]; });
+    writeDrafts(drafts);
+    if (isDir) docs.forEach((d) => { if (d.isFresh && inside(d.freshFolder || "", path)) d.freshFolder = folderOf(path); });
+    if (isDir && inside(libraryPath, path)) libraryPath = folderOf(path);
+    if (wasShowing) document.body.classList.remove("glyph-raw");
+    if (wasShowing && !wide()) openLibrary(folderOf(path));
+    else await loadServerList();
+    paintChrome();
+    if (out.undo) showUndo("“" + label + "” moved to the Trash", () => untrash(out.undo, label));
+    else flash("Moved to the Trash");
+  }
+  async function untrash(id, label) {
+    const out = await folderApi("untrash", { undo: id }, label);
+    if (!out) return;
+    await loadServerList();
+    flash("Put back in " + folderLabel(folderOf(out.path)));
+  }
+  function showUndo(text, fn) {
+    undoText.textContent = text;
+    undoAction = fn;
+    undoBar.classList.add("glyph-shown");
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(hideUndo, 7000);
+  }
+  function hideUndo() {
+    clearTimeout(undoTimer);
+    undoBar.classList.remove("glyph-shown");
+    undoAction = null;
+  }
+  undoButton.addEventListener("click", () => {
+    const fn = undoAction;
+    hideUndo();
+    if (fn) fn();
+  });
+
+  // Pins are kept on the Mac, so the phone and the Mac window show the same.
+  async function togglePin(path) {
+    const f = serverFiles.find((x) => x.path === path);
+    const want = !(f && f.pinned);
+    if (f) { f.pinned = want; renderLibrary(); }
+    const out = await folderApi("pin", { path, pinned: want }, baseName(path));
+    if (!out) { if (f) { f.pinned = !want; renderLibrary(); } return; }
+    if (f && f.pinned !== out.pinned) { f.pinned = out.pinned; renderLibrary(); }
+    flash(out.pinned ? "Pinned" : "Unpinned");
+  }
+  async function newFolder(parent) {
+    const name = await askName("New Folder", "", "Create", "In " + folderLabel(parent));
+    if (!name) return;
+    const out = await folderApi("folder", { path: (parent ? parent + "/" : "") + name }, name);
+    if (!out) return;
+    if (wide()) { libraryPath = out.path; searchInput.value = ""; }
+    await loadServerList();
+    paintChrome();
+  }
+
+  function fileItems(path) {
+    const f = serverFiles.find((x) => x.path === path);
+    return [
+      menuItem(f && f.pinned ? "Unpin" : "Pin", UI.pin, () => togglePin(path)),
+      menuItem("Move to…", UI.move, () => chooseFolderFor(path, false)),
+      menuItem("Rename File…", UI.rename, () => renameItem(path, false)),
+      menuItem("Move to Trash", UI.trash, () => trashItem(path, false), "glyph-danger"),
+    ];
+  }
+  function folderItems(path) {
+    const items = [menuItem("New Folder…", UI.newFolder, () => newFolder(path))];
+    if (path) {
+      items.push(menuItem("Rename Folder…", UI.rename, () => renameItem(path, true)),
+                 menuItem("Move to…", UI.move, () => chooseFolderFor(path, true)),
+                 menuItem("Move to Trash", UI.trash, () => trashItem(path, true), "glyph-danger"));
+    }
+    return items;
+  }
+  // The same menu as a right-click (Mac) or a long press (phone) on a row,
+  // placed where it was asked for.
+  function showItemMenu(path, isDir, x, y) {
+    closeOverlay();
+    moreMenu.replaceChildren(...(isDir ? folderItems(path) : fileItems(path)));
+    moreMenu.classList.add("glyph-context");
+    overlay("more");
+    const w = moreMenu.offsetWidth, h = moreMenu.offsetHeight;
+    moreMenu.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + "px";
+    moreMenu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + "px";
+    moreMenu.style.right = "auto";
+  }
+  function itemControls(el, path, isDir) {
+    let timer = null, x0 = 0, y0 = 0, held = false;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    el.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) return;
+      held = false;
+      x0 = e.touches[0].clientX;
+      y0 = e.touches[0].clientY;
+      cancel();
+      timer = setTimeout(() => { timer = null; held = true; showItemMenu(path, isDir, x0, y0 + 12); }, 480);
+    }, { passive: true });
+    el.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      if (t && Math.hypot(t.clientX - x0, t.clientY - y0) > 10) cancel();
+    }, { passive: true });
+    // A long press is not also a tap.
+    el.addEventListener("touchend", (e) => { cancel(); if (held) { e.preventDefault(); held = false; } });
+    el.addEventListener("touchcancel", cancel);
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (!held) showItemMenu(path, isDir, e.clientX, e.clientY);
+    });
+    if (!wide() || (isDir && !path)) return;
+    el.draggable = true;
+    el.addEventListener("dragstart", (e) => {
+      dragging = { path, isDir };
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("application/x-glyph-item", path); } catch (err) { /* only a marker */ }
+      }
+      el.classList.add("glyph-dragging");
+    });
+    el.addEventListener("dragend", () => { dragging = null; el.classList.remove("glyph-dragging"); });
+  }
+  // A folder in the sidebar takes a note or a folder dropped on it.
+  function dropTarget(el, folder) {
+    const can = () => !!dragging && folder !== folderOf(dragging.path) && !(dragging.isDir && inside(folder, dragging.path));
+    el.addEventListener("dragover", (e) => {
+      if (!can()) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      el.classList.add("glyph-drop");
+    });
+    el.addEventListener("dragleave", () => el.classList.remove("glyph-drop"));
+    el.addEventListener("drop", (e) => {
+      el.classList.remove("glyph-drop");
+      if (!can()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const item = dragging;
+      dragging = null;
+      moveItem(item.path, item.isDir, folder);
+    });
+  }
+  scrim.addEventListener("contextmenu", (e) => { e.preventDefault(); closeOverlay(); });
+
+  /* A row on the phone swipes like a row in Notes: to the left for Move and
+     Delete, to the right for Pin, and all the way across to do the first of them
+     at once. Pointer events, so the browser keeps the vertical scroll (touch-action:
+     pan-y) and hands over only the sideways movement. */
+  function closeSwipe() {
+    if (openSwipe) openSwipe.swipeTo(0, true);
+    openSwipe = null;
+  }
+  function swipeRow(row, path, isDir) {
+    if (wide()) return row;
+    const wrap = elem("div", "glyph-swipe" + (isDir ? " glyph-swipe-folder" : ""));
+    const lead = elem("div", "glyph-swipe-acts glyph-swipe-lead");
+    const trail = elem("div", "glyph-swipe-acts glyph-swipe-trail");
+    const act = (cls, icon, label, fn) => {
+      const b = elem("button", "glyph-swipe-act " + cls);
+      b.innerHTML = icon;
+      b.setAttribute("aria-label", label);
+      b.title = label;
+      b.addEventListener("click", (e) => { e.stopPropagation(); closeSwipe(); fn(); });
+      return b;
+    };
+    const f = isDir ? null : serverFiles.find((x) => x.path === path);
+    if (!isDir) lead.appendChild(act("glyph-swipe-pin", UI.pin, f && f.pinned ? "Unpin" : "Pin", () => togglePin(path)));
+    trail.append(act("glyph-swipe-move", UI.move, "Move to…", () => chooseFolderFor(path, isDir)),
+                 act("glyph-swipe-delete", UI.trash, "Move to Trash", () => trashItem(path, isDir)));
+    wrap.append(lead, trail, row);
+
+    const ACT_W = 74;
+    const leadW = lead.childElementCount * ACT_W;
+    const trailW = trail.childElementCount * ACT_W;
+    let offset = 0;
+    let settleTimer = null;
+    const place = (x, animate) => {
+      offset = x;
+      clearTimeout(settleTimer);
+      wrap.classList.toggle("glyph-swipe-animate", !!animate);
+      row.style.transform = x ? "translateX(" + x + "px)" : "";
+      // Past the buttons, the first one stretches to fill the gap.
+      trail.style.width = x < -trailW ? -x + "px" : "";
+      lead.style.width = x > leadW ? x + "px" : "";
+      if (x) {
+        wrap.classList.toggle("glyph-swipe-left", x < 0);
+        wrap.classList.toggle("glyph-swipe-right", x > 0);
+      } else {
+        // The buttons stay until the row has slid back over them.
+        settleTimer = setTimeout(() => wrap.classList.remove("glyph-swipe-left", "glyph-swipe-right"), animate ? 240 : 0);
+      }
+    };
+    wrap.swipeTo = place;
+    let start = null;
+    row.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" || !e.isPrimary) return;
+      if (openSwipe && openSwipe !== wrap) closeSwipe();
+      start = { x: e.clientX, y: e.clientY, id: e.pointerId, from: offset, sideways: false };
+    });
+    row.addEventListener("pointermove", (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      if (!start.sideways) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)) { start = null; return; }
+        if (Math.abs(dx) < 10) return;
+        start.sideways = true;
+        try { row.setPointerCapture(e.pointerId); } catch (err) { /* only a convenience */ }
+      }
+      let x = start.from + dx;
+      if (!leadW && x > 0) x = 0;
+      place(Math.max(-wrap.offsetWidth, Math.min(wrap.offsetWidth, x)), false);
+    });
+    // Older iOS honors touch-action loosely, so a sideways swipe also stops the scroll.
+    row.addEventListener("touchmove", (e) => { if (start && start.sideways) e.preventDefault(); }, { passive: false });
+    const end = (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const was = start;
+      start = null;
+      if (!was.sideways) return;
+      wrap.swipedAt = Date.now();
+      const w = wrap.offsetWidth;
+      if (offset < -w * 0.6) { place(0, true); openSwipe = null; trashItem(path, isDir); return; }
+      if (leadW && offset > w * 0.45) { place(0, true); openSwipe = null; togglePin(path); return; }
+      if (offset < -trailW / 2) { place(-trailW, true); openSwipe = wrap; return; }
+      if (leadW && offset > leadW / 2) { place(leadW, true); openSwipe = wrap; return; }
+      place(0, true);
+      if (openSwipe === wrap) openSwipe = null;
+    };
+    row.addEventListener("pointerup", end);
+    row.addEventListener("pointercancel", (e) => { if (start && start.sideways) end(e); else start = null; });
+    // A swipe is not a tap, and a tap on a row that is open only closes it.
+    wrap.addEventListener("click", (e) => {
+      if (!row.contains(e.target)) return;
+      // The click a browser may send straight after the finger lifts.
+      const justSwiped = Date.now() - (wrap.swipedAt || 0) < 250;
+      if (justSwiped || openSwipe === wrap) {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!justSwiped) closeSwipe();
+      }
+    }, true);
+    return wrap;
+  }
+  // A tap anywhere else closes an open row, and does nothing more.
+  document.addEventListener("pointerdown", (e) => {
+    if (openSwipe && !openSwipe.contains(e.target)) {
+      closeSwipe();
+      swallowTapUntil = Date.now() + 600;
+    }
+  }, true);
+  library.addEventListener("click", (e) => {
+    if (Date.now() < swallowTapUntil) {
+      swallowTapUntil = 0;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
 
   /* ---------- Aa ---------- */
   const styleButtons = [];
@@ -5628,9 +6339,12 @@ window.__glyphInstallChrome = function () {
   window.addEventListener("dragleave", () => {
     if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("glyph-dropping"); }
   });
-  window.addEventListener("dragover", (e) => e.preventDefault());
+  // A note or folder dragged inside the page is not a file from outside: only a
+  // folder in the sidebar takes it, and anywhere else it is refused.
+  window.addEventListener("dragover", (e) => { if (!dragging) e.preventDefault(); });
   window.addEventListener("drop", (e) => {
     e.preventDefault();
+    if (dragging) { dragging = null; return; }
     dragDepth = 0;
     document.body.classList.remove("glyph-dropping");
     const files = [...(e.dataTransfer.files || [])];
