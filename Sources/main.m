@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import "GlyphLibrary.h"
 
 static NSString * const kGlyphAppearanceKey = @"GlyphAppearance";
 
@@ -45,6 +46,7 @@ static NSString * const kGlyphAppearanceKey = @"GlyphAppearance";
         menuItem.state = [pref isEqualToString:@"light"] ? NSControlStateValueOn : NSControlStateValueOff;
         return YES;
     }
+    if (menuItem.action == @selector(showLibrary:)) return [GlyphLibrary available];
     if (menuItem.action == @selector(appearanceDark:)) {
         menuItem.state = [pref isEqualToString:@"dark"] ? NSControlStateValueOn : NSControlStateValueOff;
         return YES;
@@ -52,9 +54,17 @@ static NSString * const kGlyphAppearanceKey = @"GlyphAppearance";
     return YES;
 }
 
+// Opened on its own, Glyph shows the Notes window when this Mac runs the server,
+// and a blank note when it does not. Opened with a file, it shows the file.
 - (BOOL)applicationShouldOpenUntitledFile:(NSApplication *)sender {
+    if ([GlyphLibrary available]) {
+        [[GlyphLibrary shared] show];
+        return NO;
+    }
     return YES;
 }
+
+- (void)showLibrary:(id)sender { [[GlyphLibrary shared] show]; }
 
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app {
     return YES;
@@ -101,6 +111,10 @@ int main(int argc, const char *argv[]) {
         [menubar addItem:fileItem];
         NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
         [fileMenu addItem:Item(@"New Note", @selector(newDocument:), @"n", 0)];
+        NSMenuItem *library = Item(@"Notes", @selector(showLibrary:), @"l",
+                                   NSEventModifierFlagCommand | NSEventModifierFlagShift);
+        library.target = delegate;
+        [fileMenu addItem:library];
         [fileMenu addItem:Item(@"Open…", @selector(openDocument:), @"o", 0)];
 
         NSMenuItem *recentItem = [[NSMenuItem alloc] initWithTitle:@"Open Recent"

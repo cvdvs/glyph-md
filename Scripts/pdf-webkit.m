@@ -23,7 +23,11 @@ int main(int argc, const char *argv[]) {
         [NSApp finishLaunching];
         NSString *script = [NSString stringWithContentsOfFile:@(argv[1])
                                                      encoding:NSUTF8StringEncoding error:NULL];
-        NSWindow *win = [[NSWindow alloc] initWithContentRect:NSMakeRect(40, 40, 390, 844)
+        // GLYPH_SIZE=1280x800 for the wide layout; a phone's size otherwise.
+        NSSize size = NSMakeSize(390, 844);
+        if (getenv("GLYPH_SIZE")) { NSArray *wh = [@(getenv("GLYPH_SIZE")) componentsSeparatedByString:@"x"];
+                                    if (wh.count == 2) size = NSMakeSize([wh[0] doubleValue], [wh[1] doubleValue]); }
+        NSWindow *win = [[NSWindow alloc] initWithContentRect:NSMakeRect(40, 40, size.width, size.height)
                                                     styleMask:NSWindowStyleMaskTitled
                                                       backing:NSBackingStoreBuffered defer:NO];
         WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];

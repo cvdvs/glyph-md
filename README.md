@@ -22,6 +22,7 @@ One interface everywhere. `Resources/viewer.html` *is* the app — the renderer,
 - **⌘-click opens links** in your browser (in the Mac app, a link to an Obsidian note opens in Obsidian); plain click places the cursor. **⌘E** flips to the raw markdown text and back — and the raw view is a proper source editor: syntax coloring that uses the same palette as the formatted view (an H2 is gold in both), dimmed markers so you read the writing rather than the punctuation, and a line-number gutter.
 - **Copy as markdown.** ⌘A selects the note, ⇧⌘C copies it — the selection if there is one, the whole note if there is not — as *markdown*, not as flattened text. A toolbar button copies the whole note in one click, which is the only way to do it on a phone.
 - Word count, find (⌘F in raw mode), autosave with macOS version history, and pasted markdown formats itself.
+- **A Notes window, when the phone server runs on this Mac.** Glyph opens to it: every folder on the left, the chosen folder's notes beside them, the note on the right with its tools along the top, dictation included. It is the phone's own page, laid out for a wide window, so both show the same notes the same way. Files opened from Finder still open as tabs of their own.
 - **PDFs too, on the Mac.** File → Open, Open With → Glyph, or drop one on the Dock icon: it opens as a tab beside your notes, read-only, through Apple's own PDFKit, so scans, text selection and links all work. Password-protected files ask for the password. Glyph doesn't take over double-clicking a PDF.
 - **And books.** EPUBs open the same way: a chapter at a time, in your own type, with Contents, footnotes, and an **Aa** panel for size, font, spacing, margins, alignment and page color. Your place in each book is remembered. Copy-protected books aren't supported.
 
@@ -123,9 +124,14 @@ node server/glyph-server.mjs ~/Documents/drafts
 ```
 
 It prints a link carrying a token. Open it **once** on your phone (same wifi) and
-it pairs. You get the full Glyph editor plus a **folder tree** of the notes it
-serves — collapsible, filterable, remembering what you left open. Open a draft, read it, edit it — every change saves
-straight back to the file on the computer. There is only **one copy** of each
+it pairs. The phone is laid out like Apple Notes: each folder is a page of its
+subfolders and its notes, newest first and grouped by when they changed, with a
+title and the start of the text on every row, and search across all of them. A
+note opens on a page of its own, with Back, Share and a menu at the top and **Aa**
+(headings, bold, lists, quotes, links, undo), a checklist button and a microphone
+at the bottom. A new note gets its file only once it has a first line, and the
+file is named after it. Every change saves straight back to the file on the
+computer. There is only **one copy** of each
 file, so it is genuinely live and there is nothing to sync and no conflict to
 untangle; close the phone and the edit is already on disk.
 
@@ -133,11 +139,18 @@ untangle; close the phone and the edit is already on disk.
 full-screen with its own icon and no browser chrome: touch targets sized to 44pt,
 the toolbar padded for the notch, and a text-size control for reading in bed.
 
+**Dictation.** The microphone records on the phone and Whisper writes it down on the
+computer, in English or Romanian (it tells them apart by itself, or you choose),
+in paragraphs where you paused, right where the cursor was. It needs a Mac with
+Apple silicon and `mlx_whisper`; see [docs/mobile.md](docs/mobile.md#voice). A
+phone only allows a microphone on an `https` address.
+
 **PDFs open too.** Drop one in the folder and it shows up in the file list and opens
-in a tab, every page, scans included, read-only. The reader is [PDF.js](https://mozilla.github.io/pdf.js/)
+on a page of its own, every page, scans included, read-only, one page or two side by side. The reader is [PDF.js](https://mozilla.github.io/pdf.js/)
 (Apache 2.0, [license](server/vendor/pdfjs/LICENSE)), vendored for the phone server
 only, so the desktop apps stay dependency-free. **EPUB books** work too, with the
-same reader as the Mac app and nothing to install.
+same reader as the Mac app and nothing to install: scroll through a chapter, or
+read it in pages you swipe, one at a time or two side by side.
 
 Node standard library only — nothing to `npm install` — and a vendored copy of PDF.js for PDFs. **Security:** every
 request needs the token, a request can never read or write outside the served

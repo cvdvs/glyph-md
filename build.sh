@@ -13,7 +13,7 @@ clang -fobjc-arc -O2 \
   -target "$ARCH-apple-macos13.0" \
   Sources/main.m Sources/MarkdownDocument.m \
   Sources/GlyphTheme.m Sources/GlyphHighlighter.m Sources/GlyphGutter.m \
-  Sources/GlyphVault.m Sources/GlyphPDFDocument.m Sources/GlyphBookDocument.m \
+  Sources/GlyphVault.m Sources/GlyphPDFDocument.m Sources/GlyphBookDocument.m Sources/GlyphLibrary.m \
   -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers -framework PDFKit \
   -o "$APP/Contents/MacOS/Glyph"
 

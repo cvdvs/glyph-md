@@ -85,6 +85,51 @@ alignment and page color. Your settings and your place in each book are remember
 on that device. Books are read-only. A copy-protected book says so rather than
 opening.
 
+## Voice
+
+Talk instead of typing: record on the phone and the words arrive as text. The
+recording goes to the Mac, which turns it into text with Whisper
+(`mlx_whisper`, running on the Mac's own chip), so nothing leaves your devices.
+A pause of a second and a half or more starts a new paragraph, and every
+paragraph gets a capital letter and a full stop. English and Romanian are told
+apart on their own, or you can pick one, which is a little faster. If nothing
+was said it says so, rather than making words up.
+
+What the Mac needs, once:
+
+- Python with `mlx_whisper` installed, and `ffmpeg` (`brew install ffmpeg`).
+- The model already downloaded: `mlx-community/whisper-large-v3-turbo`, about
+  1.5 GB, in the usual Hugging Face cache. The server never downloads anything.
+
+The server looks for Python in this order: `GLYPH_PYTHON`, the first line of
+`~/.config/glyph/python`, `python3` on the PATH, then `/opt/homebrew/bin` and
+`/usr/local/bin`. The first one that can import `mlx_whisper` is used. If none
+can, voice is simply switched off and the phone does not offer it.
+`GLYPH_WHISPER_MODEL` picks a different model.
+
+Measured on the Mac mini: about 4 to 6 seconds for a 7-second note when the
+model has to load first, about 2 seconds after that, and 14 seconds for 49
+seconds of speech. One note is transcribed at a time, and a single note is
+given two minutes, which covers roughly six minutes of talking. The model stays
+loaded for 15 minutes after the last note, then quits to give its memory back.
+
+The recording is saved to a private temporary file and deleted as soon as it
+has been read. Neither the audio nor the words are ever written to a log.
+
+### The microphone needs the HTTPS address
+
+The phone only lets a page use the microphone on an `https://` address, so voice
+does not work on the plain `http://` links. Tailscale gives the Mac an HTTPS
+address on the tailnet, privately:
+
+```bash
+tailscale serve --bg --https=4322 http://127.0.0.1:4321
+```
+
+Then put that address (`https://<this-mac>.<your-tailnet>.ts.net:4322`) on the
+first line of `~/.config/glyph/secure-origin`. The page reads it and offers to
+move there. Pair once on that address too: the token is stored per address.
+
 ## What is safe, and what to avoid
 
 - **Every request needs the token.** Without it the API answers 401. The token
@@ -193,11 +238,11 @@ accurate — that traffic is not encrypted, and anyone on the same wifi could re
 it, including the token. The simple habit is to use the Tailscale link
 everywhere, including at home.
 
-Adding real HTTPS with `tailscale serve` is possible (it needs HTTPS
-certificates enabled for the tailnet) but it is cosmetic: it replaces a
-misleading warning with a padlock and protects nothing that Tailscale is not
-already protecting. It also changes the address, and the phone stores the
-pairing token per address, so you would pair once more.
+Adding real HTTPS with `tailscale serve` (it needs HTTPS certificates enabled
+for the tailnet) protects nothing that Tailscale is not already protecting, but
+it is no longer only cosmetic: the phone's microphone works only on an `https`
+page, so voice needs it (see **Voice** above). It changes the address, and the
+phone stores the pairing token per address, so you pair once more.
 
 ## One setting worth changing
 

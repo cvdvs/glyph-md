@@ -26,6 +26,8 @@
 	<string>glyph-md</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Glyph uses the microphone only while you dictate a note, and the recording goes to Whisper on this Mac.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

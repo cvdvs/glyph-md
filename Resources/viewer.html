@@ -669,78 +669,416 @@
   }
   body.glyph-dropping #glyph-drop { display: flex; }
 
-  /* ---- server mode: the file drawer ---- */
-  #glyph-drawer {
-    position: fixed; top: 0; left: 0; bottom: 0; z-index: 60;
-    width: 300px; max-width: 82vw;
+  /* ---- server mode: the phone, laid out like Apple Notes ----
+     Folders and notes are pages of their own. A note opens full screen, with Back,
+     Share and a menu at the top and a short bar of tools floating at the bottom.
+     Everything here is scoped to body.glyph-server, so no other build sees it. */
+  #glyph-nav, #glyph-dock, #glyph-library, .glyph-sheet, #glyph-more, #glyph-scrim { display: none; }
+  body.glyph-server {
+    --surface: rgba(var(--fg-rgb), 0.06);
+    --surface-press: rgba(var(--fg-rgb), 0.12);
+    --chrome-font: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+  }
+  body.glyph-server #glyph-bar { display: none; }
+  body.glyph-server button { -webkit-tap-highlight-color: transparent; }
+  body.glyph-server #glyph-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    box-sizing: border-box;
+    /* One height whatever it holds: at the top folder there is no Back button,
+       and a bar that shrank there moved every page under it by 8px. */
+    height: calc(max(8px, var(--glyph-top)) + 52px);
+    padding: max(8px, var(--glyph-top)) max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
     background: var(--bg);
-    border-right: 1px solid var(--border);
-    transform: translateX(-102%);
-    transition: transform 0.2s ease;
-    display: flex; flex-direction: column;
-    overscroll-behavior: contain;
+    font-family: var(--chrome-font);
+    user-select: none;
+    -webkit-user-select: none;
   }
-  body.glyph-drawer-open #glyph-drawer { transform: none; }
-  #glyph-drawer-backdrop {
-    position: fixed; inset: 0; z-index: 55;
-    background: rgba(0, 0, 0, 0.35);
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.2s ease;
-  }
-  body.glyph-drawer-open #glyph-drawer-backdrop { opacity: 1; pointer-events: auto; }
-  .glyph-drawer-head {
-    padding: max(14px, var(--glyph-top)) 16px 8px;
-    font: 600 13px -apple-system, system-ui, sans-serif;
+  .glyph-nav-gap { flex: 1; }
+  .glyph-round, .glyph-pill button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 44px; height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--surface);
     color: var(--fg);
+    font: 600 17px var(--chrome-font);
+    cursor: pointer;
   }
-  .glyph-drawer-search {
-    margin: 0 12px 8px; padding: 9px 11px;
-    border: 1px solid var(--border); border-radius: 8px;
-    background: rgba(var(--fg-rgb), 0.03); color: var(--fg);
-    font-size: 15px; -webkit-appearance: none; outline: none;
-  }
-  .glyph-drawer-search:focus { border-color: var(--accent); }
-  .glyph-drawer-list {
-    list-style: none; margin: 0; padding: 0 8px 24px;
-    overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch;
-  }
-  .glyph-drawer-item {
-    display: flex; flex-direction: column; gap: 2px; width: 100%;
-    text-align: left; border: none; background: transparent; cursor: pointer;
-    padding: 11px 10px; border-radius: 8px; color: var(--fg);
-  }
-  .glyph-drawer-item:hover { background: rgba(var(--fg-rgb), 0.06); }
-  .glyph-drawer-item.current { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
-  .glyph-drawer-name { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .glyph-drawer-sub { font-size: 11px; color: var(--faint); }
-  .glyph-drawer-empty { padding: 12px 14px; color: var(--muted); font-size: 13px; }
+  .glyph-round svg, .glyph-pill svg { width: 22px; height: 22px; }
+  .glyph-round:active, .glyph-pill button:active { background: var(--surface-press); }
+  .glyph-pill { display: inline-flex; flex: none; border-radius: 22px; background: var(--surface); }
+  .glyph-pill button { background: none; width: 48px; }
+  .glyph-done { background: var(--accent); color: #fff; }
+  .glyph-done:active { background: var(--accent); opacity: 0.85; }
+  .glyph-done svg { stroke-width: 2.6; }
+  body.glyph-server [hidden] { display: none !important; }
 
-  /* ---- touch / small screen (chrome only, so macOS is untouched) ---- */
-  /* ---- the drawer's folder tree ---- */
-  .glyph-tree-row {
-    display: flex; align-items: center; gap: 6px; width: 100%;
-    text-align: left; border: none; background: transparent; cursor: pointer;
-    color: var(--fg); border-radius: 8px;
-    padding: 9px 8px; font-size: 14px; line-height: 1.25;
+  /* The library: one folder at a time, its own scroller, so going back to it
+     never moves the note's place underneath. */
+  body.glyph-server.glyph-library #glyph-library {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+    padding: var(--glyph-bar-h, 60px) max(16px, env(safe-area-inset-right)) 140px max(16px, env(safe-area-inset-left));
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--chrome-font);
   }
-  .glyph-tree-row:hover { background: rgba(var(--fg-rgb), 0.06); }
-  .glyph-tree-row.current { background: rgba(var(--accent-rgb), 0.13); color: var(--accent); }
-  .glyph-tree-row .tw { flex: none; width: 14px; text-align: center; color: var(--faint); font-size: 10px; }
-  .glyph-tree-row .tn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .glyph-tree-row.folder .tn { color: var(--muted); font-weight: 600; }
-  .glyph-tree-row .tc { margin-left: auto; color: var(--faint); font-size: 11px; flex: none; padding-left: 8px; }
-  .glyph-tree-kids { display: none; }
-  .glyph-tree-kids.open { display: block; }
+  body.glyph-library #content, body.glyph-library #glyph-pdf, body.glyph-library #glyph-book,
+  body.glyph-library #glyph-raw { visibility: hidden; }
+  .glyph-lib-inner { max-width: 720px; margin: 0 auto; }
+  .glyph-lib-heading { margin: 4px 4px 2px; font-size: 34px; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .glyph-lib-count { margin: 0 4px 20px; color: var(--muted); font-size: 17px; }
+  .glyph-lib-when { margin: 26px 4px 8px; font-size: 20px; font-weight: 600; }
+  .glyph-lib-group { overflow: hidden; border-radius: 14px; background: var(--surface); }
+  .glyph-lib-group + .glyph-lib-group { margin-top: 22px; }
+  .glyph-lib-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 54px;
+    padding: 11px 16px;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font: 17px/1.3 var(--chrome-font);
+    text-align: left;
+    cursor: pointer;
+  }
+  .glyph-lib-row:active { background: var(--surface-press); }
+  .glyph-lib-row + .glyph-lib-row::before {
+    content: "";
+    position: absolute;
+    top: 0; right: 0; left: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .glyph-lib-folder + .glyph-lib-folder::before { left: 56px; }
+  .glyph-lib-folder > svg:first-child { width: 26px; height: 26px; flex: none; color: var(--accent); }
+  .glyph-lib-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .glyph-lib-n { flex: none; color: var(--muted); }
+  .glyph-lib-folder > svg:last-child { width: 18px; height: 18px; flex: none; margin-right: -4px; color: var(--faint); }
+  .glyph-lib-note { flex-direction: column; align-items: stretch; gap: 3px; padding-top: 12px; padding-bottom: 12px; }
+  .glyph-lib-title { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .glyph-lib-sub { overflow: hidden; color: var(--muted); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+  .glyph-lib-date { margin-right: 8px; color: var(--fg); opacity: 0.6; }
+  .glyph-lib-empty { margin: 30px 4px; color: var(--muted); font-size: 17px; }
 
-  /* Opens the file drawer. Pinned left of the tabs so it stays reachable when
-     the toolbar scrolls sideways on a narrow screen. */
-  #glyph-menu {
-    display: none;
-    flex: none; width: 42px; border: none; background: transparent;
-    color: var(--muted); font-size: 15px; cursor: pointer;
+  /* The bar of tools, floating at the bottom, and lifted above the keyboard. */
+  body.glyph-server #glyph-dock {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: fixed;
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    bottom: calc(var(--dock-lift, 0px) + max(14px, env(safe-area-inset-bottom)));
+    z-index: 50;
+    pointer-events: none;
+    font-family: var(--chrome-font);
+  }
+  body.glyph-server.glyph-keyboard #glyph-dock { bottom: calc(var(--dock-lift, 0px) + 8px); }
+  #glyph-dock > * { pointer-events: auto; }
+  .glyph-float {
+    background-color: var(--bg);
+    background-image: linear-gradient(rgba(var(--fg-rgb), 0.07), rgba(var(--fg-rgb), 0.07));
+    border: 1px solid var(--border);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+  }
+  #glyph-dock .glyph-round { width: 52px; height: 52px; }
+  #glyph-dock .glyph-pill { border-radius: 26px; }
+  #glyph-dock .glyph-pill button { height: 52px; width: 54px; }
+  .glyph-dock-gap { flex: 1; }
+  .glyph-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    height: 52px;
+    padding: 0 16px;
+    box-sizing: border-box;
+    border-radius: 26px;
+    color: var(--muted);
+  }
+  .glyph-search svg { width: 20px; height: 20px; flex: none; }
+  .glyph-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: none;
+    color: var(--fg);
+    font: 17px var(--chrome-font);
+    -webkit-appearance: none;
+  }
+  .glyph-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .glyph-aa { font: 600 19px var(--chrome-font) !important; }
+  /* Which parts of the bar belong to which page. */
+  body.glyph-server:not(.glyph-library) .glyph-search, body.glyph-server:not(.glyph-library) .glyph-new-voice,
+  body.glyph-server.glyph-library .glyph-tools, body.glyph-server.glyph-library .glyph-dock-gap { display: none; }
+  body.glyph-server.glyph-kind-file:not(.glyph-library) #glyph-dock { display: none; }
+  body.glyph-server.glyph-kind-plain .glyph-aa, body.glyph-server.glyph-kind-plain .glyph-check { display: none; }
+  body.glyph-server.glyph-voice-off .glyph-mic, body.glyph-server.glyph-voice-off .glyph-new-voice { display: none; }
+
+  body.glyph-server #content { max-width: 720px; padding-bottom: max(150px, env(safe-area-inset-bottom)); }
+  body.glyph-server #glyph-raw { padding-bottom: 150px; }
+  body.glyph-server.glyph-pdf #glyph-pdf { padding-bottom: max(40px, env(safe-area-inset-bottom)); }
+
+  /* Messages only: the word count a desktop shows all the time is noise here. */
+  body.glyph-server #glyph-status {
+    left: 50%; right: auto;
+    bottom: calc(var(--dock-lift, 0px) + max(14px, env(safe-area-inset-bottom)) + 64px);
+    z-index: 52;
+    max-width: calc(100% - 48px);
+    padding: 7px 14px;
+    transform: translateX(-50%);
+    color: var(--fg);
+    font: 14px var(--chrome-font);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.2s;
+  }
+  body.glyph-server #glyph-status[data-quiet] { opacity: 0; }
+
+  /* Sheets: Aa and the recorder rise from the bottom; the menu drops from "...". */
+  body.glyph-server[data-overlay] #glyph-scrim { display: block; position: fixed; inset: 0; z-index: 55; }
+  body.glyph-server[data-overlay="voice"] #glyph-scrim { background: rgba(0, 0, 0, 0.3); }
+  .glyph-sheet {
+    position: fixed;
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: calc(var(--dock-lift, 0px) + max(8px, env(safe-area-inset-bottom)));
+    z-index: 60;
+    box-sizing: border-box;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 14px 16px 18px;
+    border-radius: 24px;
+    color: var(--fg);
+    font-family: var(--chrome-font);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body.glyph-server[data-overlay="format"] #glyph-format,
+  body.glyph-server[data-overlay="voice"] #glyph-voice { display: block; }
+  .glyph-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .glyph-sheet-title { font-size: 19px; font-weight: 600; }
+  .glyph-sheet-head .glyph-round { width: 38px; height: 38px; }
+  .glyph-sheet-head .glyph-round svg { width: 18px; height: 18px; }
+  .glyph-styles { display: flex; gap: 6px; margin-bottom: 12px; }
+  .glyph-styles button {
+    flex: 1 1 auto;
+    min-height: 46px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 23px;
+    background: none;
+    color: var(--fg);
+    font-family: var(--chrome-font);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .glyph-styles button:nth-child(1) { font-size: 23px; font-weight: 700; }
+  .glyph-styles button:nth-child(2) { font-size: 18px; font-weight: 600; }
+  .glyph-styles button:nth-child(3) { font-size: 17px; }
+  .glyph-styles button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .glyph-format-row { display: flex; gap: 8px; margin-top: 8px; }
+  .glyph-seg { display: flex; flex: 1 1 auto; overflow: hidden; border-radius: 14px; background: var(--surface); }
+  .glyph-seg button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    min-width: 0;
+    height: 46px;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .glyph-seg button + button { border-left: 1px solid var(--border); }
+  .glyph-seg button svg { width: 20px; height: 20px; }
+  .glyph-seg button[aria-pressed="true"] { background: var(--surface-press); color: var(--accent); }
+  .glyph-seg button:active { background: var(--surface-press); }
+
+  body.glyph-server[data-overlay="more"] #glyph-more {
+    display: block;
+    position: fixed;
+    top: calc(var(--glyph-bar-h, 60px) - 2px);
+    right: max(14px, env(safe-area-inset-right));
+    z-index: 60;
+    box-sizing: border-box;
+    width: min(300px, calc(100% - 28px));
+    padding: 6px 0;
+    border-radius: 18px;
+    color: var(--fg);
+    font-family: var(--chrome-font);
+  }
+  .glyph-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 18px;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font: 17px var(--chrome-font);
+    text-align: left;
+    cursor: pointer;
+  }
+  .glyph-menu-item:active { background: var(--surface-press); }
+  .glyph-menu-item svg { width: 21px; height: 21px; flex: none; color: var(--muted); }
+  .glyph-menu-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px 0 18px; }
+  .glyph-menu-row + .glyph-menu-row, .glyph-menu-item + .glyph-menu-row { border-top: 1px solid var(--border); }
+  .glyph-menu-label { flex: 1; font-size: 15px; color: var(--muted); }
+  .glyph-menu-row .glyph-seg { flex: 0 0 auto; }
+  .glyph-menu-row .glyph-seg button { height: 38px; padding: 0 12px; font: 600 14px var(--chrome-font); }
+
+  /* The recorder. */
+  .glyph-voice-clock { margin: 6px 0 2px; font-size: 40px; font-weight: 300; font-variant-numeric: tabular-nums; text-align: center; }
+  .glyph-voice-note { min-height: 22px; margin: 0 0 12px; color: var(--muted); font-size: 15px; text-align: center; }
+  .glyph-voice-level { display: flex; align-items: center; justify-content: center; gap: 3px; height: 44px; margin-bottom: 14px; }
+  .glyph-voice-level i {
+    display: block;
+    width: 4px;
+    height: calc(4px + var(--v, 0) * 40px);
+    border-radius: 2px;
+    background: var(--accent);
+    opacity: calc(0.35 + var(--v, 0));
+  }
+  .glyph-voice-langs { margin-bottom: 14px; }
+  .glyph-voice-langs button { font: 600 15px var(--chrome-font); }
+  .glyph-voice-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .glyph-voice-actions .glyph-text-button {
+    min-width: 88px;
+    height: 44px;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: 17px var(--chrome-font);
+    cursor: pointer;
+  }
+  .glyph-voice-stop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 66px; height: 66px;
+    border: 3px solid var(--fg);
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+  }
+  .glyph-voice-stop::after { content: ""; width: 24px; height: 24px; border-radius: 5px; background: #e5484d; }
+  .glyph-voice-stop:disabled { opacity: 0.35; }
+  .glyph-voice-link { color: var(--accent); font-weight: 600; }
+
+  /* ---- a wide window: three panes, as Notes on a Mac ---- */
+  :root.glyph-mac-window { --glyph-top: 28px; }
+  body.glyph-server.glyph-wide { --side-w: 230px; --list-w: 340px; --panes-w: 570px; padding-left: var(--panes-w); }
+  body.glyph-server.glyph-wide #glyph-library {
+    display: grid;
+    grid-template-columns: var(--side-w) var(--list-w);
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    z-index: 40;
+    width: var(--panes-w);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--chrome-font);
+  }
+  .glyph-lib-side {
+    overflow-y: auto;
+    padding: max(12px, calc(var(--glyph-top) + 10px)) 10px 24px;
+    background: var(--surface);
     border-right: 1px solid var(--border);
   }
-  body.glyph-server #glyph-menu { display: block; }
+  .glyph-side-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 34px;
+    padding: 0 10px 0 calc(10px + var(--depth, 0) * 14px);
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--fg);
+    font: 15px var(--chrome-font);
+    text-align: left;
+    cursor: pointer;
+  }
+  .glyph-side-row > svg { width: 19px; height: 19px; flex: none; color: var(--accent); }
+  .glyph-side-row .glyph-lib-n { font-size: 13px; }
+  .glyph-side-row[aria-current="true"] { background: var(--accent); color: #fff; }
+  .glyph-side-row[aria-current="true"] > svg, .glyph-side-row[aria-current="true"] .glyph-lib-n { color: #fff; }
+  .glyph-lib-list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
+  .glyph-lib-listhead { padding: max(12px, calc(var(--glyph-top) + 10px)) 16px 10px; }
+  .glyph-lib-listtitle { margin: 0; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+  .glyph-wide .glyph-lib-count { margin: 2px 0 10px; font-size: 13px; }
+  .glyph-wide .glyph-search { height: 36px; padding: 0 10px; border-radius: 10px; box-shadow: none; border: 0;
+                              background-image: none; background-color: var(--surface); }
+  .glyph-wide .glyph-search input { font-size: 15px; }
+  .glyph-wide .glyph-search svg { width: 16px; height: 16px; }
+  .glyph-lib-rows { flex: 1; overflow-y: auto; padding: 0 10px 24px; }
+  .glyph-wide .glyph-lib-when { margin: 16px 8px 6px; font-size: 15px; }
+  .glyph-wide .glyph-lib-group { background: none; border-radius: 0; }
+  .glyph-wide .glyph-lib-group + .glyph-lib-group { margin-top: 0; }
+  .glyph-wide .glyph-lib-note { min-height: 0; padding: 9px 10px; border-radius: 8px; font-size: 15px; }
+  .glyph-wide .glyph-lib-row + .glyph-lib-row::before { left: 10px; right: 10px; }
+  .glyph-wide .glyph-lib-sub { font-size: 13px; }
+  .glyph-wide .glyph-lib-note[aria-current="true"] { background: var(--surface-press); }
+  .glyph-wide .glyph-lib-note[aria-current="true"]::before,
+  .glyph-wide .glyph-lib-note[aria-current="true"] + .glyph-lib-row::before { border-top-color: transparent; }
+  /* The tools sit along the top of the note, as a Mac toolbar does. */
+  body.glyph-server.glyph-wide #glyph-nav { left: var(--panes-w); }
+  body.glyph-server.glyph-wide #glyph-dock {
+    top: max(8px, var(--glyph-top));
+    bottom: auto;
+    left: calc(var(--panes-w) + 14px);
+    right: auto;
+  }
+  .glyph-wide #glyph-dock .glyph-float { box-shadow: none; border: 0; background-image: none; background-color: var(--surface); }
+  .glyph-wide #glyph-dock .glyph-round { width: 44px; height: 44px; }
+  .glyph-wide #glyph-dock .glyph-pill button { width: 46px; height: 44px; }
+  body.glyph-server.glyph-wide.glyph-no-doc .glyph-new-voice { display: inline-flex; }
+  /* The phone hides search on a note's page; here the list is always beside it. */
+  body.glyph-server.glyph-wide .glyph-search { display: flex; }
+  body.glyph-server.glyph-wide.glyph-kind-file #glyph-dock { display: flex; }
+  body.glyph-server.glyph-wide.glyph-kind-file .glyph-tools,
+  body.glyph-server.glyph-wide.glyph-no-doc .glyph-tools { display: none; }
+  body.glyph-server.glyph-wide.glyph-no-doc #md { display: none; }
+  body.glyph-server.glyph-wide.glyph-no-doc #content::before {
+    content: "Choose a note on the left";
+    display: block;
+    margin-top: 30vh;
+    color: var(--muted);
+    font: 17px var(--chrome-font);
+    text-align: center;
+  }
+  body.glyph-server.glyph-wide #glyph-raw { left: var(--panes-w); width: auto; }
+  body.glyph-server.glyph-wide .glyph-sheet { left: calc(var(--panes-w) + 16px); }
+  body.glyph-server.glyph-wide #glyph-status { left: calc(50% + var(--panes-w) / 2); }
 
   /* A PDF takes the document pane's place. The toolbar row goes with it, since
      every button on it edits text; the tab strip stays, and syncBarHeight moves
@@ -753,6 +1091,15 @@
   }
   body.glyph-server .glyph-pdf-page { max-width: 980px; margin: 0 auto 12px; background: #fff; overflow: hidden; }
   body.glyph-server .glyph-pdf-page canvas { display: block; width: 100%; height: 100%; }
+  body.glyph-server .glyph-pdf-two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    align-items: start;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  body.glyph-server .glyph-pdf-two .glyph-pdf-page { max-width: none; margin: 0; }
   body.glyph-server #glyph-book { display: none; }
   body.glyph-server.glyph-reading #glyph-book { display: block; }
   body.glyph-server.glyph-reading #content, body.glyph-server.glyph-reading #glyph-tools { display: none; }
@@ -866,6 +1213,31 @@
   .glyph-book-text table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.9em; }
   .glyph-book-text th, .glyph-book-text td { padding: 0.3em 0.6em; border: 1px solid var(--book-line); }
   .glyph-book-text pre { overflow-x: auto; font-size: 0.85em; background: none; }
+  /* Pages: a box exactly one screen tall, filled column after column. The gap is
+     twice the margin, so the next page never shows at the edge of this one. */
+  .glyph-book.glyph-book-paged { min-height: 0; }
+  .glyph-book-paged .glyph-book-text {
+    --book-edge: max(var(--book-margin, 22px), env(safe-area-inset-left), env(safe-area-inset-right));
+    box-sizing: border-box;
+    max-width: calc(var(--book-measure, 34em) + 2 * var(--book-edge));
+    padding: 18px var(--book-edge) 6px;
+    overflow: hidden;
+    column-count: 1;
+    column-gap: calc(2 * var(--book-edge));
+    column-fill: auto;
+    -webkit-user-select: text;
+  }
+  .glyph-book-two .glyph-book-text {
+    column-count: 2;
+    max-width: calc(2 * var(--book-measure, 34em) + 4 * var(--book-edge));
+  }
+  .glyph-book-paged .glyph-book-text img { max-height: calc(var(--book-page-h, 80vh) - 3em); break-inside: avoid; }
+  .glyph-book-paged .glyph-book-text .glyph-book-pending {
+    width: auto;
+    max-width: 100%;
+    height: calc(var(--book-page-h, 80vh) - 3em);
+  }
+  .glyph-book-paged .glyph-book-foot { padding-top: 4px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .glyph-book-text [data-book-style~="i"] { font-style: italic; }
   .glyph-book-text [data-book-style~="b"] { font-weight: 600; }
   .glyph-book-text [data-book-style~="c"] { text-align: center; }
@@ -978,9 +1350,6 @@
     body.glyph-chrome .glyph-tab { font-size: 14.5px; padding: 0 12px 0 15px; max-width: 52vw; }
     body.glyph-chrome .glyph-tab .x { width: 26px; height: 26px; line-height: 25px; font-size: 17px; }
     body.glyph-chrome #glyph-newtab { font-size: 21px; width: 44px; }
-    body.glyph-chrome #glyph-menu { width: 50px; font-size: 18px; }
-    body.glyph-chrome #glyph-drawer { width: 88vw; max-width: 88vw; }
-    body.glyph-chrome .glyph-tree-row { padding: 11px 8px; font-size: 15px; }
     body.glyph-chrome #glyph-status { bottom: max(10px, env(safe-area-inset-bottom)); }
     body.glyph-chrome #content { padding-bottom: max(120px, env(safe-area-inset-bottom)); }
     body.glyph-chrome #glyph-raw { padding-bottom: max(60px, env(safe-area-inset-bottom)); }
@@ -2110,6 +2479,8 @@ window.glyphToolbar = function (cmd) {
       break;
     }
     case "bullets": document.execCommand("insertUnorderedList"); break;
+    case "numbers": document.execCommand("insertOrderedList"); break;
+    case "body": document.execCommand("formatBlock", false, "<p>"); break;
     case "quote": document.execCommand("formatBlock", false, "<blockquote>"); break;
     case "codeblock": document.execCommand("formatBlock", false, "<pre>"); break;
     case "checklist": {
@@ -2895,7 +3266,8 @@ window.glyphOpenBook = async function (bytes, key, opts) {
   const book = await bookParse(bytes);
   const count = book.spine.length;
   const placeKey = "glyphBookAt:" + key;
-  const defaults = { size: 18, font: "iowan", spacing: "normal", margins: "normal", align: "left", page: "auto" };
+  const defaults = { size: 18, font: "iowan", spacing: "normal", margins: "normal", align: "left", page: "auto",
+                     reading: "scroll", spread: "auto" };
   const prefs = Object.assign(defaults, bookStored("glyphBookPrefs", {}));
   let current = 0;
   let showing = 0;
@@ -2949,8 +3321,58 @@ window.glyphOpenBook = async function (bytes, key, opts) {
     return best;
   };
   const scrollRange = () => Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-  const fraction = () => Math.min(1, window.scrollY / scrollRange());
+
+  // Pages: the chapter is laid out in columns exactly one screen tall, and a page
+  // turn moves sideways by exactly one screen. Two pages side by side is the same
+  // thing with two columns, and Auto uses it when a wide screen is held sideways.
+  let page = 0;
+  const paged = () => prefs.reading === "pages";
+  const twoUp = () => prefs.spread === "two" ||
+    (prefs.spread === "auto" && window.innerWidth > window.innerHeight && (el.clientWidth || window.innerWidth) >= 700);
+  const pageStride = () => {
+    const style = getComputedStyle(text);
+    const inner = text.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    return inner + (parseFloat(style.columnGap) || 0);
+  };
+  const pageCount = () => Math.max(1,
+    Math.ceil((text.scrollWidth - parseFloat(getComputedStyle(text).paddingLeft) - 1) / pageStride()));
+  const fraction = () => paged()
+    ? (pageCount() > 1 ? page / (pageCount() - 1) : 0)
+    : Math.min(1, window.scrollY / scrollRange());
   const remember = () => bookStore(placeKey, { chapter: current, fraction: fraction() });
+  function layoutPages() {
+    el.classList.toggle("glyph-book-paged", paged());
+    el.classList.toggle("glyph-book-two", paged() && twoUp());
+    if (!paged()) {
+      text.style.removeProperty("height");
+      return;
+    }
+    window.scrollTo(0, 0);
+    const room = window.innerHeight - text.getBoundingClientRect().top - foot.getBoundingClientRect().height;
+    const height = Math.max(240, Math.floor(room));
+    text.style.setProperty("height", height + "px");
+    text.style.setProperty("--book-page-h", height + "px");
+  }
+  function paintPlace() {
+    place.textContent = paged()
+      ? "Page " + (page + 1) + " of " + pageCount()
+      : (current + 1) + " of " + count;
+  }
+  function showPage(n, smooth) {
+    page = Math.max(0, Math.min(pageCount() - 1, n));
+    text.scrollTo({ left: page * pageStride(), behavior: smooth ? "smooth" : "auto" });
+    paintPlace();
+    remember();
+  }
+  // Past the last page is the next chapter, and before the first, the last page
+  // of the one before.
+  function turn(step) {
+    if (!paged()) { go(current + step); return; }
+    const next = page + step;
+    if (next < 0) { if (current > 0) go(current - 1, { fraction: 1 }); return; }
+    if (next >= pageCount()) { if (current < count - 1) go(current + 1); return; }
+    showPage(next, true);
+  }
 
   async function showPicture(img, always) {
     const path = bookImages.get(img);
@@ -2976,7 +3398,9 @@ window.glyphOpenBook = async function (bytes, key, opts) {
     text.style.setProperty("--book-page", shape);
   }
   const nearby = new Set();
-  const picturesSeen = new IntersectionObserver((entries) => {
+  // Scrolling, "near" is above and below the screen; in pages it is the pages
+  // either side, which only the text itself can see past its own clipping.
+  const watchPictures = () => new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       if (entry.isIntersecting) {
         nearby.add(entry.target);
@@ -2986,7 +3410,8 @@ window.glyphOpenBook = async function (bytes, key, opts) {
         entry.target.removeAttribute("src");
       }
     });
-  }, { rootMargin: "150% 0px" });
+  }, paged() ? { root: text, rootMargin: "0px 150%" } : { rootMargin: "150% 0px" });
+  let picturesSeen = watchPictures();
 
   async function go(index, where) {
     if (index < 0 || index >= count) return;
@@ -3003,8 +3428,10 @@ window.glyphOpenBook = async function (bytes, key, opts) {
     if (ticket !== showing) return;        // a later tap got there first
     current = index;
     picturesSeen.disconnect();
+    picturesSeen = watchPictures();
     nearby.clear();
     text.replaceChildren(root);
+    layoutPages();
     const pictures = [...text.querySelectorAll("img")];
     if (pictures.length <= BOOK_EAGER_IMAGES) {
       await Promise.all(pictures.map((img) => showPicture(img, true)));
@@ -3017,18 +3444,26 @@ window.glyphOpenBook = async function (bytes, key, opts) {
     if (ticket !== showing) return;
     const entry = chapterAt(index);
     chapterName.textContent = entry ? entry.label : (book.title || "");
-    place.textContent = (index + 1) + " of " + count;
     previousButton.disabled = index === 0;
     nextButton.disabled = index === count - 1;
     paintContents();
     const anchor = where && where.fragment &&
       [...text.querySelectorAll("[data-book-id]")].find((n) => n.dataset.bookId === where.fragment);
-    if (anchor) {
+    if (paged()) {
+      if (anchor) {
+        const left = anchor.getBoundingClientRect().left - text.getBoundingClientRect().left + text.scrollLeft;
+        page = Math.floor(left / pageStride());
+      } else {
+        page = Math.round((where && where.fraction ? where.fraction : 0) * (pageCount() - 1));
+      }
+      showPage(page, false);
+    } else if (anchor) {
       const top = anchor.getBoundingClientRect().top + window.scrollY - bar.getBoundingClientRect().height * 2;
       window.scrollTo(0, Math.max(0, top));
     } else {
       window.scrollTo(0, where && where.fraction ? where.fraction * scrollRange() : 0);
     }
+    paintPlace();
     remember();
     if (opts.onMove) opts.onMove();
   }
@@ -3073,6 +3508,8 @@ window.glyphOpenBook = async function (bytes, key, opts) {
     prefs[name] = value;
     bookStore("glyphBookPrefs", prefs);
     applyPrefs();
+    if (name === "reading" || name === "spread") { go(current, { fraction: was }); return; }
+    if (paged()) { layoutPages(); showPage(Math.round(was * (pageCount() - 1)), false); return; }
     window.scrollTo(0, was * scrollRange());
   }
 
@@ -3112,6 +3549,8 @@ window.glyphOpenBook = async function (bytes, key, opts) {
   row("Margins", choice("margins", [["small", "Small"], ["normal", "Normal"], ["large", "Large"]]));
   row("Align", choice("align", [["left", "Left"], ["justify", "Justified"]]));
   row("Page", choice("page", [["auto", "Auto"], ["paper", "Paper"], ["sepia", "Sepia"], ["night", "Night"]]));
+  row("Reading", choice("reading", [["scroll", "Scroll"], ["pages", "Pages"]]));
+  row("Pages", choice("spread", [["auto", "Auto"], ["one", "One"], ["two", "Two"]]));
 
   contentsButton.addEventListener("click", () => {
     overlay(el.dataset.open === "contents" ? null : "contents");
@@ -3131,7 +3570,16 @@ window.glyphOpenBook = async function (bytes, key, opts) {
   });
   text.addEventListener("click", (e) => {
     const link = e.target.closest && e.target.closest("a[href]");
-    if (!link) return;
+    if (!link) {
+      // In pages, a tap near either edge turns the page, as in a book app.
+      const sel = window.getSelection();
+      if (!paged() || (sel && !sel.isCollapsed)) return;
+      const box = text.getBoundingClientRect();
+      const at = (e.clientX - box.left) / box.width;
+      if (at < 0.22) turn(-1);
+      else if (at > 0.78) turn(1);
+      return;
+    }
     e.preventDefault();
     const href = link.getAttribute("href");
     if (/^[a-z][a-z0-9+.-]*:/i.test(href)) { if (opts.openLink) opts.openLink(href); return; }
@@ -3143,6 +3591,35 @@ window.glyphOpenBook = async function (bytes, key, opts) {
     go(index, { fragment: to.fragment });
   });
 
+  // A swipe turns the page; a mostly vertical drag is left alone.
+  let touchAt = null;
+  text.addEventListener("touchstart", (e) => {
+    touchAt = paged() && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  }, { passive: true });
+  text.addEventListener("touchend", (e) => {
+    if (!touchAt) return;
+    const dx = e.changedTouches[0].clientX - touchAt.x;
+    const dy = e.changedTouches[0].clientY - touchAt.y;
+    touchAt = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) turn(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  // A trackpad or a mouse wheel turns one page per gesture.
+  let wheelQuiet = 0;
+  text.addEventListener("wheel", (e) => {
+    if (!paged()) return;
+    e.preventDefault();
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(delta) < 8 || Date.now() < wheelQuiet) return;
+    wheelQuiet = Date.now() + 450;
+    turn(delta > 0 ? 1 : -1);
+  }, { passive: false });
+  const onResize = () => {
+    if (!el.isConnected || !paged()) return;
+    const was = fraction();
+    layoutPages();
+    showPage(Math.round(was * (pageCount() - 1)), false);
+  };
+
   let saveTimer = null;
   const onScroll = () => {
     if (!el.isConnected || saveTimer) return;
@@ -3150,17 +3627,19 @@ window.glyphOpenBook = async function (bytes, key, opts) {
   };
   const onKey = (e) => {
     if (!el.isConnected || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === "ArrowRight") go(current + 1);
-    else if (e.key === "ArrowLeft") go(current - 1);
+    if (e.key === "ArrowRight") turn(1);
+    else if (e.key === "ArrowLeft") turn(-1);
     else if (e.key === "Escape") overlay(null);
   };
   window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onResize);
   document.addEventListener("keydown", onKey);
   applyPrefs();
 
   return {
     el, title: book.title, author: book.author,
     progress: () => (current + 1) + " of " + count,
+    relayout: onResize,
     start: () => {
       const at = bookStored(placeKey, {});
       return go(at.chapter >= 0 && at.chapter < count ? at.chapter : 0, { fraction: at.fraction });
@@ -3168,6 +3647,7 @@ window.glyphOpenBook = async function (bytes, key, opts) {
     close: () => {
       picturesSeen.disconnect();
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
       document.removeEventListener("keydown", onKey);
     },
   };
@@ -3253,6 +3733,7 @@ window.__glyphInstallChrome = function () {
       paintTabs();
       // In server mode a changed document autosaves to its file on the server.
       if (serverHost() && d.serverPath) scheduleServerSave(d);
+      if (d.isFresh) maybeCommitFresh(d);
     }
     paintStatus();
   };
@@ -3357,6 +3838,7 @@ window.__glyphInstallChrome = function () {
     activeId = id;
     const d = active();
     if (!d) return;
+    d.usedAt = Date.now();
     // Each tab's images resolve against its OWN folder, so this must be set
     // before the render and cleared for a document that has no folder yet.
     if (nativeHost()) {
@@ -3398,7 +3880,7 @@ window.__glyphInstallChrome = function () {
     if (activeId === id) {
       activeId = null;
       if (docs.length) activate(docs[Math.min(i, docs.length - 1)].id);
-      else openDoc("Untitled.md", "");
+      else if (!serverHost()) openDoc("Untitled.md", "");
     }
     paintTabs();
   }
@@ -3408,7 +3890,7 @@ window.__glyphInstallChrome = function () {
   const MD_TYPES = [{ description: "Markdown", accept: { "text/markdown": [".md", ".markdown", ".mdown", ".mkd"] } }];
 
   async function doOpen() {
-    if (serverHost()) { toggleDrawer(); return; }
+    if (serverHost()) { openLibrary(); return; }
     if (nativeHost()) { postToApp({ type: "pickOpen" }); return; }
     if (canPick) {
       try {
@@ -3479,196 +3961,353 @@ window.__glyphInstallChrome = function () {
     }
   }
 
-  /* ---------- server mode ---------- */
-  // The file browser drawer and the read/autosave loop against the Glyph server.
-  // All of this is inert unless serverHost() — the native app and the plain
-  // standalone page never build it.
-  const drawer = document.createElement("aside");
-  drawer.id = "glyph-drawer";
-  const backdrop = document.createElement("div");
-  backdrop.id = "glyph-drawer-backdrop";
-  backdrop.addEventListener("click", () => closeDrawer());
+  /* ---------- server mode ----------
+     The phone, laid out like Apple Notes, which is what she already keeps notes
+     in: a folder is a page of its subfolders and its notes, newest first and
+     grouped by when they last changed, and a note opens on a page of its own.
+     All of this is inert unless serverHost(): the native app and the standalone
+     page never build it. */
+  const elem = (tag, className, text) => {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text != null) el.textContent = text;
+    return el;
+  };
+  const UI = {
+    back: svg('<polyline points="15 5 8 12 15 19"/>'),
+    share: svg('<path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/>'),
+    more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>',
+    done: svg('<polyline points="5 12.5 10 17.5 19 7"/>'),
+    folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><line x1="3" y1="10.5" x2="21" y2="10.5"/>'),
+    chevron: svg('<polyline points="9 6 15 12 9 18"/>'),
+    search: svg('<circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/>'),
+    mic: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><line x1="12" y1="17.5" x2="12" y2="21"/>'),
+    compose: svg('<path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12.5 14.5 9 15.5l1-3.5z"/>'),
+    close: svg('<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>'),
+    numbers: svg('<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 5h1.5v4"/><path d="M3.5 13.5a1.5 1.5 0 0 1 3 .2c0 1-3 2-3 3.3h3"/>'),
+  };
+  const roundButton = (icon, label, cls) => {
+    const b = elem("button", "glyph-round" + (cls ? " " + cls : ""));
+    b.innerHTML = icon;
+    b.setAttribute("aria-label", label);
+    b.title = label;
+    // Keeps the caret where it is: a tap on the bar must not take the note's focus.
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    return b;
+  };
+
+  const nav = elem("nav");
+  nav.id = "glyph-nav";
+  const backButton = roundButton(UI.back, "Back");
+  const navPill = elem("div", "glyph-pill");
+  const shareButton = roundButton(UI.share, "Share");
+  const moreButton = roundButton(UI.more, "More");
+  navPill.append(shareButton, moreButton);
+  const doneButton = roundButton(UI.done, "Done", "glyph-done");
+  nav.append(backButton, elem("div", "glyph-nav-gap"), navPill, doneButton);
+
+  const library = elem("section");
+  library.id = "glyph-library";
+  const libraryInner = elem("div", "glyph-lib-inner");
+  library.appendChild(libraryInner);
+
+  const dock = elem("div");
+  dock.id = "glyph-dock";
+  const searchPill = elem("label", "glyph-search glyph-float");
+  searchPill.innerHTML = UI.search;
+  const searchInput = elem("input");
+  searchInput.type = "search";
+  searchInput.placeholder = "Search";
+  searchInput.setAttribute("aria-label", "Search notes");
+  searchPill.appendChild(searchInput);
+  const toolsPill = elem("div", "glyph-pill glyph-float glyph-tools");
+  const aaButton = roundButton("Aa", "Format", "glyph-aa");
+  const checkButton = roundButton(ICON.checklist, "Checklist", "glyph-check");
+  const micButton = roundButton(UI.mic, "Dictate", "glyph-mic");
+  toolsPill.append(aaButton, checkButton, micButton);
+  const voiceNoteButton = roundButton(UI.mic, "New voice note", "glyph-float glyph-new-voice");
+  const composeButton = roundButton(UI.compose, "New note", "glyph-float");
+  dock.append(searchPill, toolsPill, elem("div", "glyph-dock-gap"), voiceNoteButton, composeButton);
+
+  const scrim = elem("div");
+  scrim.id = "glyph-scrim";
+  const formatSheet = elem("div", "glyph-sheet glyph-float");
+  formatSheet.id = "glyph-format";
+  const voiceSheet = elem("div", "glyph-sheet glyph-float");
+  voiceSheet.id = "glyph-voice";
+  const moreMenu = elem("div", "glyph-float");
+  moreMenu.id = "glyph-more";
+
   const pdfHost = document.createElement("div");
   pdfHost.id = "glyph-pdf";
   const bookHost = document.createElement("div");
   bookHost.id = "glyph-book";
   if (serverHost()) {
-    document.body.appendChild(backdrop);
-    document.body.appendChild(drawer);
-    document.body.appendChild(pdfHost);
-    document.body.appendChild(bookHost);
-  }
-
-  function openDrawer() { document.body.classList.add("glyph-drawer-open"); }
-  function closeDrawer() { document.body.classList.remove("glyph-drawer-open"); }
-  function toggleDrawer() {
-    if (document.body.classList.contains("glyph-drawer-open")) closeDrawer();
-    else { openDrawer(); loadServerList(); }
+    document.body.append(library, pdfHost, bookHost, nav, dock, scrim, formatSheet, voiceSheet, moreMenu);
   }
 
   let serverFiles = [];
+  let rootName = "Notes";
+  let libraryPath = "";
+  let libraryProblem = null;
+  const folderOf = (p) => (p.lastIndexOf("/") < 0 ? "" : p.slice(0, p.lastIndexOf("/")));
+  // A wide window shows everything at once, as Notes on a Mac does: every folder
+  // on the left, the chosen folder's notes beside it, and the note on the right.
+  // Below that width it is the phone's one page at a time.
+  const wideQuery = window.matchMedia("(min-width: 900px)");
+  const wide = () => serverHost() && wideQuery.matches;
+  const inLibrary = () => !wide() && document.body.classList.contains("glyph-library");
+  // In Glyph's own Mac window the page runs under the title bar, whose top strip
+  // is where the window is dragged from and the traffic lights sit.
+  if (new URLSearchParams(location.search).get("shell") === "mac") {
+    document.documentElement.classList.add("glyph-mac-window");
+  }
+
+  function openLibrary(path) {
+    if (path != null) libraryPath = path;
+    closeOverlay();
+    if (!wide()) document.body.classList.add("glyph-library");
+    paintChrome();
+    renderLibrary();
+    loadServerList();
+  }
+  function closeLibrary() {
+    closeOverlay();
+    document.body.classList.remove("glyph-library");
+    paintChrome();
+  }
+
   async function loadServerList() {
-    drawer.innerHTML = '<div class="glyph-drawer-head">Loading…</div>';
     try {
       const res = await glyphApi("/api/files");
-      if (res.status === 401) { drawer.innerHTML = drawerError("Not paired. Reopen the link from the server."); return; }
-      if (!res.ok) { drawer.innerHTML = drawerError("Could not reach the server."); return; }
-      const data = await res.json();
-      serverFiles = data.files || [];
-      renderDrawer(data.root || "Files");
-    } catch (e) {
-      drawer.innerHTML = drawerError("Offline — the computer is not reachable.");
-    }
-  }
-
-  function drawerError(msg) {
-    const d = document.createElement("div");
-    d.className = "glyph-drawer-head";
-    d.textContent = msg;
-    return d.outerHTML;
-  }
-
-  // Which folders are expanded, remembered between visits.
-  const openFolders = (() => {
-    try { return new Set(JSON.parse(localStorage.getItem("glyphOpenFolders") || "[]")); }
-    catch (e) { return new Set(); }
-  })();
-  function rememberFolders() {
-    try { localStorage.setItem("glyphOpenFolders", JSON.stringify([...openFolders])); }
-    catch (e) { /* private mode */ }
-  }
-
-  function buildTree(files) {
-    const root = { dirs: new Map(), files: [], count: 0 };
-    for (const f of files) {
-      const parts = f.path.split("/");
-      const base = parts.pop();
-      let node = root;
-      node.count++;
-      for (const p of parts) {
-        if (!node.dirs.has(p)) node.dirs.set(p, { dirs: new Map(), files: [], count: 0 });
-        node = node.dirs.get(p);
-        node.count++;
+      if (res.status === 401) libraryProblem = "Not paired. Open the link from the computer once more.";
+      else if (!res.ok) libraryProblem = "Could not reach the computer.";
+      else {
+        const data = await res.json();
+        serverFiles = data.files || [];
+        rootName = data.root || rootName;
+        libraryProblem = null;
       }
-      node.files.push({ path: f.path, base: base });
+    } catch (e) {
+      libraryProblem = "Offline. The computer is not reachable.";
     }
-    return root;
+    renderLibrary();
   }
 
-  // Markdown loses its extension — it is the norm here — while a .txt or .pdf
-  // keeps it, so it is obvious at a glance which files are which.
+  // Markdown loses its extension, as it is the norm here, while a .txt, a PDF
+  // or a book keeps it, so it is obvious at a glance which files are which.
   function fileLabel(base) {
     return isPlainName(base) || isPdfName(base) || isBookName(base) ? base : base.replace(/\.(md|markdown|mdown|mkd)$/i, "");
   }
+  const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
 
-  // Files are shown as a FOLDER TREE, not a flat list: a folder holding
-  // warhammer-fanfic/drafts/chapters repeated on fourteen rows is unreadable on
-  // a phone. Filtering flattens it again — when you are searching you want the
-  // matches, not the structure.
-  function renderDrawer(rootName, filter) {
-    drawer.textContent = "";
-    const head = document.createElement("div");
-    head.className = "glyph-drawer-head";
-    head.textContent = rootName;
-    drawer.appendChild(head);
-
-    const search = document.createElement("input");
-    search.className = "glyph-drawer-search";
-    search.type = "search";
-    search.placeholder = "Filter…";
-    search.value = filter || "";
-    search.addEventListener("input", () => paint(search.value.trim().toLowerCase()));
-    drawer.appendChild(search);
-
-    const list = document.createElement("div");
-    list.className = "glyph-drawer-list";
-    drawer.appendChild(list);
-
-    function makeRow(cls, depth, twisty, label, trailing) {
-      const b = document.createElement("button");
-      b.className = "glyph-tree-row " + cls;
-      b.style.paddingLeft = (8 + depth * 14) + "px";
-      const t = document.createElement("span");
-      t.className = "tw";
-      t.textContent = twisty;
-      const n = document.createElement("span");
-      n.className = "tn";
-      n.textContent = label;
-      b.appendChild(t);
-      b.appendChild(n);
-      if (trailing != null) {
-        const c = document.createElement("span");
-        c.className = "tc";
-        c.textContent = trailing;
-        b.appendChild(c);
-      }
-      return b;
-    }
-
-    function makeFileRow(path, base, depth, trailing) {
-      const b = makeRow("file", depth, "·", fileLabel(base), trailing);
-      const cur = active();
-      if (cur && cur.serverPath === path) b.classList.add("current");
-      b.addEventListener("click", () => openFromServer(path));
-      return b;
-    }
-
-    function renderNode(node, depth, prefix, into) {
-      const dirs = [...node.dirs.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-      for (const entry of dirs) {
-        const name = entry[0], child = entry[1];
-        const path = prefix ? prefix + "/" + name : name;
-        const isOpen = openFolders.has(path);
-        const row = makeRow("folder", depth, isOpen ? "▾" : "▸", name, String(child.count));
-        const kids = document.createElement("div");
-        kids.className = "glyph-tree-kids" + (isOpen ? " open" : "");
-        row.addEventListener("click", () => {
-          const nowOpen = !kids.classList.contains("open");
-          kids.classList.toggle("open", nowOpen);
-          row.querySelector(".tw").textContent = nowOpen ? "▾" : "▸";
-          if (nowOpen) openFolders.add(path); else openFolders.delete(path);
-          rememberFolders();
-        });
-        into.appendChild(row);
-        renderNode(child, depth + 1, path, kids);
-        into.appendChild(kids);
-      }
-      for (const f of node.files) into.appendChild(makeFileRow(f.path, f.base, depth));
-    }
-
-    function paint(q) {
-      list.textContent = "";
-      if (q) {
-        const hits = serverFiles.filter((f) => f.path.toLowerCase().indexOf(q) >= 0);
-        if (!hits.length) {
-          const e = document.createElement("div");
-          e.className = "glyph-drawer-empty";
-          e.textContent = "No match.";
-          list.appendChild(e);
-          return;
-        }
-        for (const f of hits) {
-          const folder = f.path.indexOf("/") >= 0 ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
-          list.appendChild(makeFileRow(f.path, f.name, 0, folder || null));
-        }
-        return;
-      }
-      if (!serverFiles.length) {
-        const e = document.createElement("div");
-        e.className = "glyph-drawer-empty";
-        e.textContent = "No notes in this folder.";
-        list.appendChild(e);
-        return;
-      }
-      renderNode(buildTree(serverFiles), 0, "", list);
-    }
-    paint((filter || "").trim().toLowerCase());
+  // Notes' own grouping: what changed today is not mixed in with last spring.
+  function whenGroup(ms) {
+    const now = new Date();
+    const day = 86400000;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (ms >= today) return "Today";
+    if (ms >= today - day) return "Yesterday";
+    if (ms >= today - 6 * day) return "Previous 7 Days";
+    if (ms >= today - 29 * day) return "Previous 30 Days";
+    const d = new Date(ms);
+    return d.getFullYear() === now.getFullYear()
+      ? d.toLocaleDateString(undefined, { month: "long" }) : String(d.getFullYear());
   }
+  function shortDate(ms) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const d = new Date(ms);
+    if (ms >= today) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    if (ms >= today - 86400000) return "Yesterday";
+    if (ms >= today - 6 * 86400000) return d.toLocaleDateString(undefined, { weekday: "long" });
+    return d.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+
+  function noteRow(f, showFolder) {
+    const b = elem("button", "glyph-lib-row glyph-lib-note");
+    b.dataset.path = f.path;
+    b.appendChild(elem("span", "glyph-lib-title", f.title || fileLabel(f.name)));
+    const sub = elem("span", "glyph-lib-sub");
+    sub.appendChild(elem("span", "glyph-lib-date", shortDate(f.mtime)));
+    const kind = isPdfName(f.name) ? "PDF" : isBookName(f.name) ? "Book" : "";
+    const tail = showFolder ? (folderOf(f.path) || rootName) : (kind || f.preview || "");
+    if (tail) sub.appendChild(elem("span", "glyph-lib-preview", tail));
+    b.appendChild(sub);
+    b.addEventListener("click", () => openFromServer(f.path));
+    return b;
+  }
+  function folderRow(path, count) {
+    const b = elem("button", "glyph-lib-row glyph-lib-folder");
+    b.dataset.folder = path;
+    b.innerHTML = UI.folder;
+    b.appendChild(elem("span", "glyph-lib-name", path.slice(path.lastIndexOf("/") + 1)));
+    b.appendChild(elem("span", "glyph-lib-n", String(count)));
+    b.insertAdjacentHTML("beforeend", UI.chevron);
+    b.addEventListener("click", () => {
+      libraryPath = path;
+      searchInput.value = "";
+      renderLibrary();
+      library.scrollTop = 0;
+      paintChrome();
+    });
+    return b;
+  }
+
+  // Notes newest first, under Today, Yesterday, the last week and month, then
+  // months and years.
+  function appendGroups(into, files, showFolder) {
+    let lastWhen = null;
+    let group = null;
+    files.sort((a, b) => b.mtime - a.mtime).forEach((f) => {
+      const when = whenGroup(f.mtime);
+      if (when !== lastWhen) {
+        into.appendChild(elem("h2", "glyph-lib-when", when));
+        group = elem("div", "glyph-lib-group");
+        into.appendChild(group);
+        lastWhen = when;
+      }
+      group.appendChild(noteRow(f, showFolder));
+    });
+  }
+  function searchHits(query) {
+    const words = query.split(/\s+/);
+    return serverFiles.filter((f) => {
+      const hay = [f.title, f.name, f.preview, f.path].join(" ").toLowerCase();
+      return words.every((w) => hay.indexOf(w) >= 0);
+    }).sort((a, b) => b.mtime - a.mtime);
+  }
+
+  const sidePane = elem("div", "glyph-lib-side");
+  const listPane = elem("div", "glyph-lib-list");
+  const listHead = elem("div", "glyph-lib-listhead");
+  const listTitle = elem("h2", "glyph-lib-listtitle");
+  const listCount = elem("p", "glyph-lib-count");
+  const listRows = elem("div", "glyph-lib-rows");
+  listHead.append(listTitle, listCount);
+  listPane.append(listHead, listRows);
+  function sideRow(path, name, count, depth) {
+    const b = elem("button", "glyph-side-row");
+    b.dataset.folder = path;
+    b.style.setProperty("--depth", String(Math.min(depth, 5)));
+    b.innerHTML = UI.folder;
+    b.appendChild(elem("span", "glyph-lib-name", name));
+    b.appendChild(elem("span", "glyph-lib-n", String(count)));
+    if (path === libraryPath && !searchInput.value.trim()) b.setAttribute("aria-current", "true");
+    b.addEventListener("click", () => {
+      libraryPath = path;
+      searchInput.value = "";
+      renderLibrary();
+      listRows.scrollTop = 0;
+      paintChrome();
+    });
+    return b;
+  }
+  function renderWide() {
+    // Built once and kept, so the search field keeps its focus while typing.
+    if (library.firstChild !== sidePane) library.replaceChildren(sidePane, listPane);
+    if (searchPill.parentNode !== listHead) listHead.appendChild(searchPill);
+    const counts = new Map();
+    serverFiles.forEach((f) => {
+      for (let p = folderOf(f.path); ; p = folderOf(p)) {
+        counts.set(p, (counts.get(p) || 0) + 1);
+        if (!p) break;
+      }
+    });
+    sidePane.replaceChildren(sideRow("", rootName, counts.get("") || 0, 0));
+    [...counts.keys()].filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))
+      .forEach((p) => sidePane.appendChild(sideRow(p, p.slice(p.lastIndexOf("/") + 1), counts.get(p), p.split("/").length)));
+    const query = searchInput.value.trim().toLowerCase();
+    listRows.replaceChildren();
+    if (libraryProblem && !serverFiles.length) {
+      listTitle.textContent = rootName;
+      listCount.textContent = libraryProblem;
+      return;
+    }
+    const files = query ? searchHits(query) : serverFiles.filter((f) => folderOf(f.path) === libraryPath);
+    listTitle.textContent = query ? "Search" : (libraryPath ? libraryPath.slice(libraryPath.lastIndexOf("/") + 1) : rootName);
+    listCount.textContent = query ? (files.length ? plural(files.length, "result", "results") : "No results")
+                                  : plural(files.length, "note", "notes");
+    if (query) {
+      const group = elem("div", "glyph-lib-group");
+      files.slice(0, 200).forEach((f) => group.appendChild(noteRow(f, true)));
+      listRows.appendChild(group);
+    } else {
+      appendGroups(listRows, files, false);
+    }
+    paintSelection();
+  }
+  // The note on the right is marked in the list, as in Notes.
+  function paintSelection() {
+    const d = active();
+    listRows.querySelectorAll(".glyph-lib-note").forEach((r) => {
+      r.setAttribute("aria-current", String(!!d && r.dataset.path === d.serverPath));
+    });
+  }
+  function useWidth() {
+    document.body.classList.toggle("glyph-wide", wide());
+    if (wide()) document.body.classList.remove("glyph-library");
+    else if (!active()) document.body.classList.add("glyph-library");
+    if (!wide() && searchPill.parentNode !== dock) dock.insertBefore(searchPill, dock.firstChild);
+    renderLibrary();
+    paintChrome();
+  }
+  if (serverHost()) wideQuery.addEventListener("change", useWidth);
+
+  function renderLibrary() {
+    if (wide()) { renderWide(); return; }
+    if (library.firstChild !== libraryInner) library.replaceChildren(libraryInner);
+    const into = libraryInner;
+    into.replaceChildren();
+    const query = searchInput.value.trim().toLowerCase();
+    const name = libraryPath ? libraryPath.slice(libraryPath.lastIndexOf("/") + 1) : rootName;
+    into.appendChild(elem("h1", "glyph-lib-heading", query ? "Search" : name));
+    if (libraryProblem && !serverFiles.length) {
+      into.appendChild(elem("p", "glyph-lib-empty", libraryProblem));
+      return;
+    }
+    if (query) {
+      const hits = searchHits(query);
+      into.appendChild(elem("p", "glyph-lib-count", hits.length ? plural(hits.length, "result", "results") : "No results"));
+      if (hits.length) {
+        const group = elem("div", "glyph-lib-group");
+        hits.slice(0, 200).forEach((f) => group.appendChild(noteRow(f, true)));
+        into.appendChild(group);
+      }
+      return;
+    }
+    const prefix = libraryPath ? libraryPath + "/" : "";
+    const folders = new Map();
+    const here = [];
+    serverFiles.forEach((f) => {
+      if (!f.path.startsWith(prefix)) return;
+      const rest = f.path.slice(prefix.length);
+      const cut = rest.indexOf("/");
+      if (cut < 0) here.push(f);
+      else folders.set(prefix + rest.slice(0, cut), (folders.get(prefix + rest.slice(0, cut)) || 0) + 1);
+    });
+    const counts = [];
+    if (folders.size) counts.push(plural(folders.size, "folder", "folders"));
+    if (here.length || !folders.size) counts.push(plural(here.length, "note", "notes"));
+    into.appendChild(elem("p", "glyph-lib-count", counts.join(", ")));
+    if (folders.size) {
+      const group = elem("div", "glyph-lib-group");
+      [...folders.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: "base" }))
+        .forEach(([path, count]) => group.appendChild(folderRow(path, count)));
+      into.appendChild(group);
+    }
+    appendGroups(into, here, false);
+    if (!folders.size && !here.length) into.appendChild(elem("p", "glyph-lib-empty", "Nothing here yet."));
+  }
+  searchInput.addEventListener("input", () => { renderLibrary(); library.scrollTop = 0; });
+  searchInput.addEventListener("keydown", (e) => { if (e.key === "Enter") searchInput.blur(); });
 
   async function openFromServer(rel) {
     // Already open? Just show it.
     const existing = docs.find((d) => d.serverPath === rel);
-    if (existing) { activate(existing.id); closeDrawer(); return; }
+    if (existing) { activate(existing.id); closeLibrary(); return; }
     if (isPdfName(rel)) { openPdf(rel); return; }
     if (isBookName(rel)) { openBook(rel); return; }
     try {
@@ -3693,7 +4332,7 @@ window.__glyphInstallChrome = function () {
         holdStatus("Restored an edit that never saved — press Save to send it");
       }
       paintTabs();
-      closeDrawer();
+      closeLibrary();
     } catch (e) {
       flash("Offline — the computer is not reachable");
     }
@@ -3707,7 +4346,6 @@ window.__glyphInstallChrome = function () {
   async function openPdf(rel) {
     if (pdfOpening.has(rel)) return;
     pdfOpening.add(rel);
-    closeDrawer();
     paintStatus("Opening PDF…");
     let task = null;
     let d = null;
@@ -3741,13 +4379,14 @@ window.__glyphInstallChrome = function () {
     // it must not be answered by shutting it down underneath its own pages.
     docs.push(d);
     activate(d.id);
+    closeLibrary();
+    trimDocs();
   }
 
   // A book is a tab with no text too, so it stands aside everywhere a PDF does.
   async function openBook(rel) {
     if (pdfOpening.has(rel)) return;
     pdfOpening.add(rel);
-    closeDrawer();
     paintStatus("Opening book…");
     let d = null;
     try {
@@ -3771,6 +4410,8 @@ window.__glyphInstallChrome = function () {
     }
     docs.push(d);
     activate(d.id);
+    closeLibrary();
+    trimDocs();
     await d.book.start();
   }
 
@@ -3779,8 +4420,38 @@ window.__glyphInstallChrome = function () {
   // screen hold a picture. A rendered page is a bitmap, and a long document kept
   // whole would run a phone out of memory. A tab in the background is out of the
   // document, so its pages count as off screen and let go of theirs as well.
+  // One page or two side by side, remembered on this device. Auto is two when a
+  // wide screen is held sideways.
+  const pdfSpread = () => {
+    try { return localStorage.getItem("glyphPdfSpread") || "auto"; } catch (e) { return "auto"; }
+  };
+  const pdfTwoUp = () => pdfSpread() === "two" ||
+    (pdfSpread() === "auto" && window.innerWidth > window.innerHeight && (pdfHost.clientWidth || window.innerWidth) >= 800);
+  function applyPdfSpread(d) {
+    if (!d || !d.pdf) return;
+    const two = pdfTwoUp();
+    if (d.pdfEl.classList.contains("glyph-pdf-two") === two) return;
+    // Keeps the page at the top of the screen at the top of the screen.
+    const boxes = [...d.pdfEl.children];
+    const top = boxes.find((b) => b.getBoundingClientRect().bottom > 80) || boxes[0];
+    d.pdfEl.classList.toggle("glyph-pdf-two", two);
+    boxes.forEach((box) => {
+      if (!box.firstChild) return;
+      clearPdfPage(box);
+      d.pdfSeen.unobserve(box);
+      d.pdfSeen.observe(box);
+    });
+    if (top && d.pdfEl.isConnected) window.scrollTo(0, top.getBoundingClientRect().top + window.scrollY - 80);
+  }
+  window.addEventListener("resize", () => {
+    const d = active();
+    if (d && d.pdf) applyPdfSpread(d);
+    if (d && d.book && d.book.relayout) d.book.relayout();
+  });
+
   function buildPdfView(d, sizes) {
     d.pdfEl = document.createElement("div");
+    d.pdfEl.className = "glyph-pdf-view" + (pdfTwoUp() ? " glyph-pdf-two" : "");
     d.pdfSeen = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
         if (e.isIntersecting) paintPdfPage(d.pdf, e.target); else clearPdfPage(e.target);
@@ -3955,8 +4626,9 @@ window.__glyphInstallChrome = function () {
 
   function initServer() {
     // Land on the file list so the phone opens to "what can I read?".
-    loadServerList();
-    openDrawer();
+    document.body.classList.toggle("glyph-wide", wide());
+    openLibrary("");
+    checkVoice();
     // When the wifi comes back, flush every note that still has an edit waiting.
     window.addEventListener("online", () => {
       docs.forEach((d) => { if (d.serverPath && d.pendingSave) scheduleServerSave(d, { immediate: true }); });
@@ -3973,6 +4645,7 @@ window.__glyphInstallChrome = function () {
       if (document.visibilityState === "hidden") {
         captureActive();
         docs.forEach((d) => { if (d.serverPath && d.pendingSave) stashDraft(d); });
+        docs.forEach((d) => { if (d.isFresh) commitFresh(d); });
       } else {
         docs.forEach((d) => {
           if (d.serverPath && d.pendingSave) {
@@ -4011,12 +4684,12 @@ window.__glyphInstallChrome = function () {
   // and a hardcoded guess hid the first lines of the document under the bar —
   // so it is measured, and re-measured when the window changes.
   function syncBarHeight() {
-    const h = Math.round(bar.getBoundingClientRect().height);
+    const h = Math.round((serverHost() ? nav : bar).getBoundingClientRect().height);
     if (h > 0) document.documentElement.style.setProperty("--glyph-bar-h", h + "px");
   }
   window.addEventListener("resize", syncBarHeight);
   window.addEventListener("orientationchange", () => setTimeout(syncBarHeight, 120));
-  if (window.ResizeObserver) new ResizeObserver(syncBarHeight).observe(bar);
+  if (window.ResizeObserver) new ResizeObserver(syncBarHeight).observe(serverHost() ? nav : bar);
 
   const rawArea = document.createElement("textarea");
   rawArea.id = "glyph-raw";
@@ -4060,19 +4733,9 @@ window.__glyphInstallChrome = function () {
   document.body.appendChild(imgInput);
 
   function paintTabs() {
+    // The phone has no tabs: one page at a time, with Back.
+    if (serverHost()) { paintChrome(); return; }
     tabsEl.replaceChildren();
-    if (serverHost()) {
-      // Left of the tabs and outside the horizontal scroll, so the way back to
-      // the file list is always in the same place — the toolbar's own Open
-      // button scrolls off screen on a phone.
-      const menu = document.createElement("button");
-      menu.id = "glyph-menu";
-      menu.textContent = "☰";
-      menu.title = "Files";
-      menu.setAttribute("aria-label", "Files");
-      menu.addEventListener("click", toggleDrawer);
-      tabsEl.appendChild(menu);
-    }
     docs.forEach((d) => {
       const t = document.createElement("button");
       t.className = "glyph-tab" + (d.dirty ? " dirty" : "");
@@ -4274,11 +4937,14 @@ window.__glyphInstallChrome = function () {
   // needed to see it.
   let stickyStatus = null;
   function paintStatus(msg) {
+    // Quiet means a count rather than a message, which the phone does not show.
+    status.removeAttribute("data-quiet");
     if (msg) {
       status.textContent = msg;
       return;
     }
     if (stickyStatus) { status.textContent = stickyStatus; return; }
+    status.dataset.quiet = "";
     const d = active();
     if (d && d.pdf) {
       status.textContent = d.pdf.numPages.toLocaleString() + (d.pdf.numPages === 1 ? " page" : " pages");
@@ -4296,6 +4962,617 @@ window.__glyphInstallChrome = function () {
     clearTimeout(flashTimer);
     flashTimer = setTimeout(() => paintStatus(), 1600);
   }
+
+  /* ---------- server mode: moving around, and the bars ---------- */
+  // Which page is showing decides which buttons make sense.
+  function paintChrome() {
+    if (!serverHost()) return;
+    const d = active();
+    const atLibrary = inLibrary();
+    const kind = !d || atLibrary ? "" : d.pdf || d.book ? "file" : d.plain ? "plain" : "note";
+    ["note", "plain", "file"].forEach((k) => document.body.classList.toggle("glyph-kind-" + k, kind === k));
+    backButton.hidden = wide() || (atLibrary && !libraryPath && !searchInput.value.trim());
+    document.body.classList.toggle("glyph-no-doc", !d);
+    if (wide()) paintSelection();
+    // A book has its own Aa; a PDF has only the menu, for one or two pages.
+    navPill.hidden = atLibrary || !d || !!d.book;
+    shareButton.hidden = kind === "file";
+    doneButton.hidden = atLibrary || !document.body.classList.contains("glyph-editing");
+    backButton.setAttribute("aria-label", atLibrary ? "Back" : "Back to " + (libraryLabelFor(d) || rootName));
+    if (d && !atLibrary) document.title = d.name + " — Glyph";
+    else document.title = (libraryPath ? libraryPath.slice(libraryPath.lastIndexOf("/") + 1) : rootName) + " — Glyph";
+  }
+  function libraryLabelFor(d) {
+    const folder = d ? (d.serverPath ? folderOf(d.serverPath) : d.freshFolder || "") : libraryPath;
+    return folder ? folder.slice(folder.lastIndexOf("/") + 1) : rootName;
+  }
+
+  async function goBack() {
+    closeOverlay();
+    if (inLibrary()) {
+      if (searchInput.value.trim()) { searchInput.value = ""; renderLibrary(); }
+      else if (libraryPath) { libraryPath = folderOf(libraryPath); renderLibrary(); library.scrollTop = 0; }
+      paintChrome();
+      return;
+    }
+    const d = active();
+    leaveEditing();
+    const folder = d ? (d.serverPath ? folderOf(d.serverPath) : d.freshFolder || "") : libraryPath;
+    if (d && d.isFresh) await commitFresh(d);
+    openLibrary(folder);
+    // Open documents stay in memory, so going back to one is instant and an edit
+    // still on its way to the Mac keeps going. An empty new note was never a file.
+    if (d && d.isFresh && !hasWords(d.text)) dropDoc(d);
+    trimDocs();
+  }
+  backButton.addEventListener("click", goBack);
+
+  function dropDoc(d) {
+    const i = docs.indexOf(d);
+    if (i < 0) return;
+    docs.splice(i, 1);
+    if (d.pdf) { d.pdfSeen.disconnect(); d.pdfTask.destroy(); }
+    if (d.book) d.book.close();
+    if (activeId === d.id) {
+      activeId = null;
+      document.body.classList.remove("glyph-pdf", "glyph-reading");
+      pdfHost.replaceChildren();
+      bookHost.replaceChildren();
+    }
+  }
+  // A PDF or a book is heavy, so only the last one stays open, which is enough
+  // for one to come back where it was left. Eight notes stay; one with an edit
+  // still on its way to the Mac is never let go.
+  function trimDocs() {
+    const cur = active();
+    const byUse = docs.filter((d) => d !== cur).sort((a, b) => (a.usedAt || 0) - (b.usedAt || 0));
+    const files = byUse.filter((d) => d.pdf || d.book);
+    files.slice(0, Math.max(0, files.length - (cur && (cur.pdf || cur.book) ? 0 : 1))).forEach(dropDoc);
+    const notes = byUse.filter((d) => !d.pdf && !d.book && !d.dirty && !d.pendingSave && !d.saving && !d.isFresh);
+    notes.slice(0, Math.max(0, notes.length - 8)).forEach(dropDoc);
+  }
+
+  /* ---------- editing ---------- */
+  const isEditor = (el) => !!el && (el === rawArea || (el.closest && !!el.closest("#md")));
+  function paintEditing() {
+    document.body.classList.toggle("glyph-editing", isEditor(document.activeElement));
+    paintChrome();
+  }
+  document.addEventListener("focusin", paintEditing);
+  document.addEventListener("focusout", () => setTimeout(paintEditing, 0));
+  function leaveEditing() {
+    if (isEditor(document.activeElement)) document.activeElement.blur();
+    captureActive();
+  }
+  doneButton.addEventListener("click", () => {
+    leaveEditing();
+    const d = active();
+    if (d && d.isFresh) commitFresh(d);
+  });
+
+  // The keyboard covers the bottom of the screen without moving anything fixed,
+  // so the bar is lifted by exactly the part it covers.
+  function placeDock() {
+    const vv = window.visualViewport;
+    const lift = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+    document.documentElement.style.setProperty("--dock-lift", lift + "px");
+    document.body.classList.toggle("glyph-keyboard", lift > 80);
+  }
+  if (serverHost() && window.visualViewport) {
+    window.visualViewport.addEventListener("resize", placeDock);
+    window.visualViewport.addEventListener("scroll", placeDock);
+  }
+
+  // A tool needs a caret in the note. Tapped while reading, it goes at the end.
+  function caretInNote() {
+    const md = document.getElementById("md");
+    const sel = window.getSelection();
+    if (sel.rangeCount && md.contains(sel.getRangeAt(0).startContainer) && document.activeElement === md) return;
+    md.focus();
+    const r = document.createRange();
+    r.selectNodeContents(md.lastElementChild || md);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+  checkButton.addEventListener("click", () => { caretInNote(); window.glyphToolbar("checklist"); });
+
+  /* ---------- new notes ----------
+     A new note has no file until it has a first line, and the file is named after
+     that line, the way Notes titles a note. Nothing empty is ever left behind. */
+  // A new note starts on an empty title line, which is a "#" in the file and no
+  // writing at all. Only a letter or a number makes it worth a file.
+  const hasWords = (text) => /[\p{L}\p{N}]/u.test(text || "");
+  function noteName(text) {
+    const line = (text.split("\n").find((l) => l.trim()) || "")
+      .replace(/^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|>\s*|\d+[.)]\s+)/, "")
+      .replace(/[*_`~=[\]]/g, "")
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ")
+      .replace(/\s+/g, " ").trim().replace(/^\.+/, "");
+    let name = line.slice(0, 60);
+    if (line.length > 60) name = name.replace(/\s+\S*$/, "") || name;
+    return name.replace(/[.\s]+$/, "") || "New note";
+  }
+  function currentFolder() {
+    if (inLibrary() || wide()) return libraryPath;
+    const d = active();
+    return d ? (d.serverPath ? folderOf(d.serverPath) : d.freshFolder || "") : libraryPath;
+  }
+  function newNote(text) {
+    const folder = currentFolder();
+    leaveEditing();
+    const d = openDoc("New note.md", text || "", null);
+    d.isFresh = true;
+    d.freshFolder = folder;
+    closeLibrary();
+    window.scrollTo(0, 0);
+    if (text) commitFresh(d);
+    else {
+      // The first line is the title, as in Notes, and the file is named after it.
+      caretInNote();
+      document.execCommand("formatBlock", false, "<h1>");
+    }
+    return d;
+  }
+  composeButton.addEventListener("click", () => newNote(""));
+
+  async function commitFresh(d) {
+    if (!d.isFresh) return;
+    if (d.committing) return d.committing;
+    const text = d.text || "";
+    if (!hasWords(text)) return;
+    d.committing = (async () => {
+      const base = noteName(text);
+      const prefix = d.freshFolder ? d.freshFolder + "/" : "";
+      const taken = new Set(serverFiles.map((f) => f.path.toLowerCase()));
+      for (let n = 1; n < 100; n++) {
+        const name = base + (n > 1 ? " " + n : "") + ".md";
+        if (taken.has((prefix + name).toLowerCase())) continue;
+        let res;
+        try {
+          res = await glyphApi("/api/file", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: prefix + name, text, create: true }),
+          });
+        } catch (e) {
+          holdStatus("Offline. This note is kept here and saves when you reconnect");
+          return;
+        }
+        if (res.status === 409) continue;
+        if (!res.ok) { flash("Could not save this note"); return; }
+        const data = await res.json();
+        d.isFresh = false;
+        d.serverPath = prefix + name;
+        d.name = name;
+        d.mtime = data.mtime;
+        serverFiles.push({ path: d.serverPath, name, size: text.length, mtime: data.mtime,
+                           title: noteName(text), preview: "" });
+        releaseStatus();
+        // Anything typed while the file was being made goes the usual way.
+        if (d.text !== text) scheduleServerSave(d);
+        else d.dirty = false;
+        if (wide()) renderLibrary();
+        paintChrome();
+        return;
+      }
+      flash("Could not find a free name for this note");
+    })();
+    try { await d.committing; } finally { d.committing = null; }
+  }
+  // The first line is finished once there is a second one.
+  function maybeCommitFresh(d) {
+    if (d.isFresh && /\S[^\n]*\n\s*\S/.test(d.text)) commitFresh(d);
+  }
+
+  /* ---------- sharing and the menu ---------- */
+  shareButton.addEventListener("click", async () => {
+    const d = active();
+    if (!d || d.pdf || d.book) return;
+    captureActive();
+    const title = d.serverPath ? fileLabel(d.name) : noteName(d.text);
+    if (navigator.share) {
+      try { await navigator.share({ title, text: d.text }); } catch (e) { /* cancelled */ }
+      return;
+    }
+    doCopy("all");
+  });
+
+  function overlay(which) {
+    document.body.dataset.overlay = which;
+  }
+  function closeOverlay() {
+    if (document.body.dataset.overlay === "voice") cancelVoice();
+    delete document.body.dataset.overlay;
+  }
+  scrim.addEventListener("click", closeOverlay);
+
+  function menuItem(label, icon, fn) {
+    const b = elem("button", "glyph-menu-item");
+    b.innerHTML = icon || "";
+    b.appendChild(elem("span", "", label));
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", () => { closeOverlay(); fn(); });
+    return b;
+  }
+  function segmented(options) {
+    const seg = elem("div", "glyph-seg");
+    options.forEach(([label, title, fn, pressed]) => {
+      const b = elem("button", "", label);
+      b.title = title;
+      b.setAttribute("aria-label", title);
+      if (pressed != null) b.setAttribute("aria-pressed", String(!!pressed));
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", fn);
+      seg.appendChild(b);
+    });
+    return seg;
+  }
+  function paintMore() {
+    const d = active();
+    moreMenu.replaceChildren();
+    if (d && d.pdf) {
+      const spread = pdfSpread();
+      const set = (v) => () => {
+        try { localStorage.setItem("glyphPdfSpread", v); } catch (e) { /* private mode */ }
+        applyPdfSpread(d);
+        paintMore();
+      };
+      const pages = elem("div", "glyph-menu-row");
+      pages.append(elem("span", "glyph-menu-label", "Pages"),
+        segmented([["Auto", "Two when the screen is sideways", set("auto"), spread === "auto"],
+                   ["One", "One page", set("one"), spread === "one"],
+                   ["Two", "Two pages side by side", set("two"), spread === "two"]]));
+      moreMenu.appendChild(pages);
+      return;
+    }
+    moreMenu.appendChild(menuItem("Copy as Markdown", ICON.copy, () => doCopy("all")));
+    if (d && !d.plain) {
+      const raw = document.body.classList.contains("glyph-raw");
+      moreMenu.appendChild(menuItem(raw ? "Show Formatted" : "Show Markdown", ICON.raw, toggleRaw));
+    }
+    const size = elem("div", "glyph-menu-row");
+    size.append(elem("span", "glyph-menu-label", "Text size"),
+      segmented([["A−", "Smaller text", () => nudgeReaderSize(-1)], ["A+", "Larger text", () => nudgeReaderSize(1)]]));
+    moreMenu.appendChild(size);
+    const mode = document.documentElement.getAttribute("data-theme") || "system";
+    const look = elem("div", "glyph-menu-row");
+    const pick = (m) => () => {
+      window.glyphSetTheme(m);
+      try { localStorage.setItem("glyphTheme", m); } catch (e) { /* private mode */ }
+      paintMore();
+    };
+    look.append(elem("span", "glyph-menu-label", "Look"),
+      segmented([["Auto", "Follow the phone", pick("system"), mode === "system"],
+                 ["Light", "Light", pick("light"), mode === "light"],
+                 ["Dark", "Dark", pick("dark"), mode === "dark"]]));
+    moreMenu.appendChild(look);
+  }
+  moreButton.addEventListener("click", () => {
+    if (document.body.dataset.overlay === "more") { closeOverlay(); return; }
+    paintMore();
+    overlay("more");
+  });
+  try {
+    const savedLook = localStorage.getItem("glyphTheme");
+    if (serverHost() && savedLook) window.glyphSetTheme(savedLook);
+  } catch (e) { /* private mode */ }
+
+  /* ---------- Aa ---------- */
+  const styleButtons = [];
+  const formatButtons = [];
+  function formatAction(cmd) {
+    return () => {
+      caretInNote();
+      window.glyphToolbar(cmd);
+      paintFormat();
+    };
+  }
+  function buildFormatSheet() {
+    const head = elem("div", "glyph-sheet-head");
+    const close = roundButton(UI.close, "Close");
+    close.addEventListener("click", closeOverlay);
+    head.append(elem("span", "glyph-sheet-title", "Format"), close);
+    const styles = elem("div", "glyph-styles");
+    [["Heading", "h1"], ["Subheading", "h2"], ["Body", "body"]].forEach(([label, cmd]) => {
+      const b = elem("button", "", label);
+      b.dataset.block = cmd;
+      b.addEventListener("mousedown", (e) => e.preventDefault());
+      b.addEventListener("click", formatAction(cmd));
+      styles.appendChild(b);
+      styleButtons.push(b);
+    });
+    const row = (...groups) => {
+      const r = elem("div", "glyph-format-row");
+      groups.forEach((g) => r.appendChild(g));
+      return r;
+    };
+    const group = (items) => {
+      const seg = elem("div", "glyph-seg");
+      items.forEach(([icon, label, cmd, state]) => {
+        const b = elem("button");
+        b.innerHTML = icon;
+        b.title = label;
+        b.setAttribute("aria-label", label);
+        if (state) b.dataset.state = state;
+        b.addEventListener("mousedown", (e) => e.preventDefault());
+        b.addEventListener("click", formatAction(cmd));
+        seg.appendChild(b);
+        formatButtons.push(b);
+      });
+      return seg;
+    };
+    formatSheet.append(head, styles,
+      row(group([[ICON.bold, "Bold", "bold", "bold"], [ICON.italic, "Italic", "italic", "italic"],
+                 [ICON.underline, "Underline", "underline", "underline"], [ICON.strike, "Strikethrough", "strike", "strikeThrough"]]),
+          group([[ICON.highlight, "Highlight", "highlight"], [ICON.code, "Code", "code"]])),
+      row(group([[ICON.bullets, "Bulleted list", "bullets"], [UI.numbers, "Numbered list", "numbers"],
+                 [ICON.checklist, "Checklist", "checklist"]]),
+          group([[ICON.quote, "Quote", "quote"]])),
+      row(group([[ICON.link, "Link", "link"], [ICON.table, "Table", "table"]]),
+          group([[ICON.undo, "Undo", "undo"], [ICON.redo, "Redo", "redo"]])));
+  }
+  if (serverHost()) buildFormatSheet();
+  function paintFormat() {
+    if (document.body.dataset.overlay !== "format") return;
+    const blk = currentBlock();
+    const tag = blk ? blk.tagName : "P";
+    styleButtons.forEach((b) => {
+      const on = b.dataset.block === "h1" ? tag === "H1" : b.dataset.block === "h2" ? tag === "H2" : !/^H[1-6]$/.test(tag);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    formatButtons.forEach((b) => {
+      if (!b.dataset.state) return;
+      let on = false;
+      try { on = document.queryCommandState(b.dataset.state); } catch (e) { /* not supported */ }
+      b.setAttribute("aria-pressed", String(on));
+    });
+  }
+  aaButton.addEventListener("click", () => {
+    if (document.body.dataset.overlay === "format") { closeOverlay(); return; }
+    caretInNote();
+    overlay("format");
+    paintFormat();
+  });
+  document.addEventListener("selectionchange", () => {
+    if (document.body.dataset.overlay === "format") paintFormat();
+  });
+
+  /* ---------- voice ----------
+     Recorded here, written down on the Mac by Whisper, and put where the caret
+     was. The phone only allows a microphone on a secure page, so on the plain
+     http address the sheet says so and offers the secure one instead. */
+  let voiceReady = null;
+  let secureOrigin = null;
+  const voice = { recorder: null, stream: null, chunks: [], started: 0, timer: null,
+                  audio: null, frame: 0, blob: null, target: "note", range: null, rawAt: null };
+  async function checkVoice() {
+    try {
+      const res = await glyphApi("/api/voice");
+      voiceReady = res.ok && (await res.json()).available === true;
+    } catch (e) { voiceReady = false; }
+    try {
+      const res = await glyphApi("/api/info");
+      if (res.ok) secureOrigin = (await res.json()).secureOrigin || null;
+    } catch (e) { /* older server */ }
+    document.body.classList.toggle("glyph-voice-off", voiceReady === false);
+  }
+  const voiceLang = () => {
+    try { return localStorage.getItem("glyphVoiceLang") || "auto"; } catch (e) { return "auto"; }
+  };
+  const clock = (ms) => {
+    const s = Math.floor(ms / 1000);
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  };
+
+  function paintVoice(state, detail) {
+    voiceSheet.replaceChildren();
+    voiceSheet.dataset.state = state;
+    const clockEl = elem("div", "glyph-voice-clock", state === "recording" ? clock(Date.now() - voice.started) : "");
+    const note = elem("p", "glyph-voice-note", detail || "");
+    const level = elem("div", "glyph-voice-level");
+    for (let i = 0; i < 28; i++) level.appendChild(elem("i"));
+    const lang = voiceLang();
+    const langs = segmented([["Auto", "Detect the language", () => setLang("auto"), lang === "auto"],
+                             ["English", "English", () => setLang("en"), lang === "en"],
+                             ["Română", "Romanian", () => setLang("ro"), lang === "ro"]]);
+    langs.classList.add("glyph-voice-langs");
+    const actions = elem("div", "glyph-voice-actions");
+    const cancel = elem("button", "glyph-text-button", "Cancel");
+    cancel.addEventListener("click", closeOverlay);
+    if (state === "recording") {
+      const stop = elem("button", "glyph-voice-stop");
+      stop.setAttribute("aria-label", "Stop and write it down");
+      stop.addEventListener("click", finishVoice);
+      actions.append(cancel, stop, elem("span", "glyph-text-button"));
+      voiceSheet.append(clockEl, note, level, langs, actions);
+    } else if (state === "working") {
+      const stop = elem("button", "glyph-voice-stop");
+      stop.disabled = true;
+      actions.append(cancel, stop, elem("span", "glyph-text-button"));
+      voiceSheet.append(clockEl, note, langs, actions);
+    } else {
+      const again = elem("button", "glyph-text-button", voice.blob ? "Try again" : "");
+      if (voice.blob) again.addEventListener("click", sendVoice);
+      if (state === "insecure" && secureOrigin) {
+        const go = elem("button", "glyph-text-button glyph-voice-link", "Open secure Glyph");
+        go.addEventListener("click", () => {
+          location.href = secureOrigin + "/#token=" + encodeURIComponent(glyphToken());
+        });
+        actions.append(cancel, go);
+      } else {
+        actions.append(cancel, again);
+      }
+      voiceSheet.append(note, actions);
+    }
+    voice.levelEl = level;
+  }
+  function setLang(code) {
+    try { localStorage.setItem("glyphVoiceLang", code); } catch (e) { /* private mode */ }
+    voiceSheet.querySelectorAll(".glyph-voice-langs button").forEach((b, i) => {
+      b.setAttribute("aria-pressed", String(["auto", "en", "ro"][i] === code));
+    });
+  }
+
+  async function startVoice(target) {
+    voice.target = target;
+    voice.blob = null;
+    voice.range = null;
+    voice.rawAt = null;
+    const md = document.getElementById("md");
+    const sel = window.getSelection();
+    if (document.body.classList.contains("glyph-raw")) voice.rawAt = rawArea.selectionStart;
+    else if (sel.rangeCount && md.contains(sel.getRangeAt(0).startContainer)) voice.range = sel.getRangeAt(0).cloneRange();
+    overlay("voice");
+    if (!window.isSecureContext || !navigator.mediaDevices || !window.MediaRecorder) {
+      paintVoice("insecure", secureOrigin
+        ? "Your iPhone allows the microphone only on Glyph's secure address."
+        : "Your iPhone allows the microphone only on a secure (https) address.");
+      return;
+    }
+    paintVoice("working", "Starting the microphone…");
+    try {
+      voice.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      paintVoice("denied", "Glyph is not allowed to use the microphone. You can allow it in Settings.");
+      return;
+    }
+    if (document.body.dataset.overlay !== "voice") { stopStream(); return; }   // cancelled meanwhile
+    const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"]
+      .find((t) => MediaRecorder.isTypeSupported(t));
+    voice.recorder = new MediaRecorder(voice.stream, type ? { mimeType: type } : undefined);
+    voice.chunks = [];
+    voice.recorder.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) voice.chunks.push(e.data); });
+    voice.recorder.start(1000);
+    voice.started = Date.now();
+    paintVoice("recording");
+    meter();
+    voice.timer = setInterval(() => {
+      const c = voiceSheet.querySelector(".glyph-voice-clock");
+      if (c) c.textContent = clock(Date.now() - voice.started);
+      if (Date.now() - voice.started > 10 * 60 * 1000) finishVoice();   // ten minutes at most
+    }, 250);
+  }
+  // A row of bars that follow her voice, so it is obvious the phone is listening.
+  function meter() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      voice.audio = new Ctx();
+      const source = voice.audio.createMediaStreamSource(voice.stream);
+      const analyser = voice.audio.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const samples = new Uint8Array(analyser.fftSize);
+      const history = new Array(28).fill(0);
+      const draw = () => {
+        if (!voice.recorder || voice.recorder.state !== "recording") return;
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0;
+        for (let i = 0; i < samples.length; i++) { const v = (samples[i] - 128) / 128; sum += v * v; }
+        history.push(Math.min(1, Math.sqrt(sum / samples.length) * 4));
+        history.shift();
+        const bars = voice.levelEl ? voice.levelEl.children : [];
+        for (let i = 0; i < bars.length; i++) bars[i].style.setProperty("--v", history[i].toFixed(2));
+        voice.frame = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch (e) { /* the bars are a nicety */ }
+  }
+  function stopStream() {
+    clearInterval(voice.timer);
+    cancelAnimationFrame(voice.frame);
+    if (voice.stream) voice.stream.getTracks().forEach((t) => t.stop());
+    if (voice.audio) voice.audio.close().catch(() => {});
+    voice.stream = null;
+    voice.audio = null;
+  }
+  function cancelVoice() {
+    const rec = voice.recorder;
+    voice.recorder = null;
+    if (rec && rec.state !== "inactive") rec.stop();
+    stopStream();
+  }
+  async function finishVoice() {
+    const rec = voice.recorder;
+    if (!rec) return;
+    voice.recorder = null;
+    const done = new Promise((resolve) => rec.addEventListener("stop", resolve, { once: true }));
+    if (rec.state !== "inactive") rec.stop();
+    await done;
+    stopStream();
+    voice.blob = new Blob(voice.chunks, { type: rec.mimeType || "audio/mp4" });
+    sendVoice();
+  }
+  async function sendVoice() {
+    paintVoice("working", "Writing it down…");
+    let res;
+    try {
+      res = await glyphApi("/api/transcribe?lang=" + encodeURIComponent(voiceLang()), {
+        method: "POST",
+        headers: { "Content-Type": (voice.blob.type || "audio/mp4").split(";")[0] },
+        body: voice.blob,
+      });
+    } catch (e) {
+      paintVoice("failed", "Could not reach the computer. Your recording is kept.");
+      return;
+    }
+    if (document.body.dataset.overlay !== "voice") return;
+    if (res.status === 422) { paintVoice("failed", "No speech was heard."); return; }
+    if (!res.ok) { paintVoice("failed", "Whisper could not write that down."); return; }
+    const data = await res.json();
+    voice.blob = null;
+    delete document.body.dataset.overlay;
+    placeTranscript(String(data.text || ""));
+  }
+  function placeTranscript(text) {
+    const words = (text.match(/\S+/g) || []).length;
+    const d = active();
+    if (voice.target === "new" || !d || d.pdf || d.book || inLibrary()) newNote(text);
+    else insertIntoNote(text);
+    flash("Added " + plural(words, "word", "words"));
+  }
+  function insertIntoNote(text) {
+    const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+    if (!paragraphs.length) return;
+    if (document.body.classList.contains("glyph-raw")) {
+      const at = voice.rawAt != null ? voice.rawAt : rawArea.value.length;
+      const before = rawArea.value.slice(0, at);
+      const lead = before.trim() && !/\n\s*$/.test(before) ? "\n\n" : "";
+      rawArea.value = before + lead + paragraphs.join("\n\n") + rawArea.value.slice(at);
+      rawArea.dispatchEvent(new Event("input"));
+      return;
+    }
+    const md = document.getElementById("md");
+    md.focus();
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    let range = voice.range;
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(md.lastElementChild || md);
+      range.collapse(false);
+    }
+    sel.addRange(range);
+    // In the middle of a sentence it joins the sentence; at the end of one, or on
+    // an empty line, it starts paragraphs of its own.
+    const blk = currentBlock();
+    const tail = document.createRange();
+    tail.setStart(range.endContainer, range.endOffset);
+    if (blk) tail.setEndAfter(blk.lastChild || blk);
+    const atEnd = !blk || !tail.toString().trim();
+    if (!atEnd) {
+      document.execCommand("insertText", false, " " + paragraphs.join(" ") + " ");
+    } else {
+      if (blk && blk.textContent.trim()) document.execCommand("insertParagraph");
+      paragraphs.forEach((p, i) => {
+        if (i) document.execCommand("insertParagraph");
+        document.execCommand("insertText", false, p);
+      });
+    }
+    window.glyphFlush();
+  }
+  micButton.addEventListener("click", () => startVoice("note"));
+  voiceNoteButton.addEventListener("click", () => startVoice("new"));
 
   /* ---------- keyboard ---------- */
   document.addEventListener("keydown", (e) => {
@@ -4326,7 +5603,7 @@ window.__glyphInstallChrome = function () {
     if (e.shiftKey && k === "c") { e.preventDefault(); doCopy("selection"); return; }
     if (k === "s") { e.preventDefault(); doSave(); return; }
     if (k === "o") { e.preventDefault(); doOpen(); return; }
-    if (k === "n") { e.preventDefault(); openDoc("Untitled.md", ""); return; }
+    if (k === "n") { e.preventDefault(); if (serverHost()) newNote(""); else openDoc("Untitled.md", ""); return; }
     if (k === "e") { e.preventDefault(); toggleRaw(); return; }
     if (k === "w") { e.preventDefault(); if (activeId != null) closeDoc(activeId); return; }
     if (e.shiftKey && k === "x") { e.preventDefault(); window.glyphToolbar("strike"); return; }

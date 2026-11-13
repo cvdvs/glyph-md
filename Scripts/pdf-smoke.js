@@ -32,15 +32,19 @@
   });
 
   const body = document.body;
-  const row = (label) =>
-    [...document.querySelectorAll(".glyph-tree-row.file")]
-      .find((r) => r.querySelector(".tn").textContent === label);
-  const tab = (label) =>
-    [...document.querySelectorAll(".glyph-tab")].find((t) => t.textContent.includes(label));
-  const tabCount = (label) =>
-    [...document.querySelectorAll(".glyph-tab")].filter((t) => t.textContent.includes(label)).length;
+  // The phone moves like Notes: a folder page, a file page, and Back between them.
+  const lib = () => body.classList.contains("glyph-library");
+  const back = () => document.querySelector("#glyph-nav .glyph-round").click();
+  const rowIn = (label) => [...document.querySelectorAll(".glyph-lib-note")].find((r) => {
+    const base = r.dataset.path.split("/").pop();
+    return base === label || base === label + ".md";
+  });
+  const open = async (label) => {
+    if (!lib()) { back(); await until(lib); }
+    (await until(() => rowIn(label))).click();
+  };
+  const dock = () => getComputedStyle(document.getElementById("glyph-dock")).display;
   const status = () => document.getElementById("glyph-status").textContent;
-  const tools = () => getComputedStyle(document.getElementById("glyph-tools")).display;
   const box = (n) => document.querySelector('.glyph-pdf-page[data-page="' + n + '"]');
   // Ink, not merely a canvas: a blank white sheet would pass any weaker check,
   // and a blank page is exactly how a render failure looks.
@@ -67,24 +71,24 @@
     document.dispatchEvent(new Event("visibilitychange"));
   };
 
-  ok("a device with a saved text size starts up whole",
-    !window.__startupErrors.length && document.getElementById("glyph-menu"),
+  ok("a device with a saved text size starts up whole, on its folder page",
+    !window.__startupErrors.length && lib() && document.querySelector(".glyph-lib-heading"),
     window.__startupErrors.join(" | "));
   ok("and the saved size is applied", body.style.getPropertyValue("--reader-size") === "19px",
     body.style.getPropertyValue("--reader-size"));
 
-  await until(() => row("book.pdf"));
-  ok("the PDF is in the file list, extension showing", row("book.pdf") && /book\.pdf/.test(row("book.pdf").textContent));
+  await until(() => rowIn("book.pdf"));
+  ok("the PDF is in the folder, marked as a PDF", /PDF/.test(rowIn("book.pdf").textContent), rowIn("book.pdf").textContent);
 
-  row("book.pdf").click();
+  await open("book.pdf");
   await until(() => inked(1), 30000);
   ok("the first page has ink on it", inked(1));
-  ok("it opened in its own tab", tabCount("book.pdf") === 1);
+  ok("it opened on a page of its own", !lib() && body.classList.contains("glyph-pdf"));
   ok("the status counts pages, not words", status() === "40 pages", status());
   ok("the second page is in the document too", await until(() => inked(2)));
   ok("the parser runs in a real worker, not on the page", !window.pdfjsWorker);
-  ok("the toolbar is out of the way", tools() === "none", tools());
-  const barH = () => Math.round(document.getElementById("glyph-bar").getBoundingClientRect().height);
+  ok("the tools are out of the way", dock() === "none", dock());
+  const barH = () => Math.round(document.getElementById("glyph-nav").getBoundingClientRect().height);
   ok("the page moved up into that space",
     await until(() => parseFloat(getComputedStyle(body).paddingTop) === barH()), barH());
   ok("a landscape page keeps its own shape",
@@ -93,6 +97,27 @@
   ok("a page fits the screen", box(1).getBoundingClientRect().width <= innerWidth);
   ok("nothing scrolls sideways", document.documentElement.scrollWidth <= innerWidth + 1,
     document.documentElement.scrollWidth + " of " + innerWidth);
+
+  // One page or two, from the menu.
+  const more = () => document.querySelector('#glyph-nav [aria-label="More"]');
+  const spread = (label) => [...document.querySelectorAll("#glyph-more button")].find((b) => b.textContent === label);
+  ok("a PDF has the menu, and no Share", more().getBoundingClientRect().width > 0 &&
+    document.querySelector('#glyph-nav [aria-label="Share"]').hidden);
+  more().click();
+  await until(() => spread("Two"));
+  spread("Two").click();
+  await sleep(300);
+  ok("Two puts pages side by side",
+    Math.abs(box(1).getBoundingClientRect().top - box(2).getBoundingClientRect().top) < 2 &&
+    box(1).getBoundingClientRect().right <= box(2).getBoundingClientRect().left,
+    JSON.stringify([box(1).getBoundingClientRect().left, box(2).getBoundingClientRect().left]));
+  ok("and draws them again at their new size", await until(() => inked(1) && inked(2), 20000));
+  spread("One").click();
+  await sleep(300);
+  ok("One stacks them again", box(2).getBoundingClientRect().top > box(1).getBoundingClientRect().bottom);
+  document.getElementById("glyph-scrim").click();
+  await until(() => inked(1));
+  window.scrollTo(0, 0);
 
   box(40).scrollIntoView();
   ok("the last page draws when you reach it", await until(() => inked(40)));
@@ -108,50 +133,50 @@
     writes.length + " writes");
 
   const y = window.scrollY;
-  row("note").click();
+  await open("note");
   await until(() => !body.classList.contains("glyph-pdf") && mdEl().innerText.includes("A note beside"));
   ok("a note opens beside it", mdEl().innerText.includes("A note beside"));
-  ok("the toolbar comes back for a note", tools() !== "none", tools());
+  ok("the tools come back for a note", dock() !== "none", dock());
   ok("the PDF behind it lets go of its pictures", await until(() => !document.querySelector("canvas")));
 
   // The awkward case: typing, then switching within the 600ms before the edit
   // reaches the document. It has to land on the note and nowhere else.
   typeAtEnd(" EDITED");
-  tab("book.pdf").click();
+  await open("book.pdf");
   await until(() => inked(40));
   ok("the PDF comes back where you left it", Math.abs(window.scrollY - y) < 3, window.scrollY + " vs " + y);
   await sleep(1500);
   ok("an edit in flight lands on its own note, only there",
     writes.length >= 1 && writes.every((w) => w.path === "note.md" && w.text.includes("EDITED")),
     JSON.stringify(writes.map((w) => w.path)));
-  ok("no tab is left marked unsaved", !document.querySelector(".glyph-tab.dirty"));
+  ok("nothing is left waiting to save", !/unsaved|Offline/.test(status()), status());
 
-  tab("note.md").click();
+  await open("note");
   await until(() => mdEl().innerText.includes("EDITED"));
   ok("the note still reads as itself", mdEl().innerText.includes("EDITED") && !body.classList.contains("glyph-pdf"));
 
   // The same race against the tabs that CAN be written. A .txt never re-renders
   // #md, so the leftover edit used to be taken for the .txt's own text and saved
   // over the file.
-  row("notes.txt").click();
+  await open("notes.txt");
   await until(() => body.classList.contains("glyph-raw"));
-  row("other").click();
+  await open("other");
   await until(() => !body.classList.contains("glyph-raw") && mdEl().innerText.includes("star bullet"));
-  tab("note.md").click();
+  await open("note");
   await until(() => mdEl().innerText.includes("EDITED"));
   typeAtEnd(" AGAIN");
-  tab("notes.txt").click();
+  await open("notes.txt");
   await sleep(1500);
   ok("an edit in flight never lands on a .txt",
     document.getElementById("glyph-raw").value === "plain text\n" &&
     writes.every((w) => w.path === "note.md"), JSON.stringify([...new Set(writes.map((w) => w.path))]));
-  tab("note.md").click();
+  await open("note");
   await until(() => mdEl().innerText.includes("AGAIN"));
   typeAtEnd(" THIRD");
-  tab("other.md").click();
+  await open("other");
   await sleep(1500);
-  ok("nor rewrites the next note", writes.every((w) => w.path === "note.md") &&
-    !document.querySelector(".glyph-tab.dirty"), JSON.stringify([...new Set(writes.map((w) => w.path))]));
+  ok("nor rewrites the next note", writes.every((w) => w.path === "note.md"),
+    JSON.stringify([...new Set(writes.map((w) => w.path))]));
 
   // A note that was only read is never written, whichever way it is left. It
   // reads as * here and the serializer would write -, so the file shows any slip.
@@ -166,40 +191,35 @@
     JSON.stringify(document.getElementById("glyph-raw").value));
   key("e");
   await sleep(1200);
-  ok("a note only read is never written", writes.every((w) => w.path === "note.md") &&
-    !document.querySelector(".glyph-tab.dirty"), JSON.stringify([...new Set(writes.map((w) => w.path))]));
+  ok("a note only read is never written", writes.every((w) => w.path === "note.md"),
+    JSON.stringify([...new Set(writes.map((w) => w.path))]));
 
-  row("edited").click();
+  await open("edited");
   await until(() => mdEl().innerText.includes("Edited"));
   typeAtEnd(" TYPED");
   await until(() => writes.some((w) => w.path === "edited.md"), 5000);
   ok("an edit to an untidy note still counts as one", writes.some((w) => w.path === "edited.md"));
   writes.length = 0;
 
-  tab("notes.txt").click();
+  await open("notes.txt");
   await until(() => body.classList.contains("glyph-raw"));
-  tab("book.pdf").click();
+  await open("book.pdf");
   await until(() => inked(40));
   ok("coming from a plain text file leaves no raw view over the PDF",
     !body.classList.contains("glyph-raw") && body.classList.contains("glyph-pdf"));
 
-  tab("book.pdf").querySelector(".x").click();
-  await until(() => !tab("book.pdf"));
-  ok("closing the tab clears the PDF", !tab("book.pdf") && !document.querySelector(".glyph-pdf-page"));
+  back();
+  ok("Back goes to the folder", await until(lib));
 
-  row("book.pdf").click();
-  row("book.pdf").click();
-  await until(() => inked(1), 30000);
-  ok("a double tap opens one tab", tabCount("book.pdf") === 1, tabCount("book.pdf"));
-
-  row("scan.pdf").click();
+  // A newer PDF lets the older one go, so this one opens fresh. Tapped twice.
+  rowIn("scan.pdf").click();
+  rowIn("scan.pdf").click();
   ok("a scanned page draws, through its decoder", await until(() => inked(1) && status() === "1 page", 30000));
-  tab("book.pdf").click();
+  ok("a double tap opens it once", document.querySelectorAll("#glyph-pdf > div").length === 1);
 
-  const before = document.querySelectorAll(".glyph-tab").length;
-  row("broken.pdf").click();
+  await open("broken.pdf");
   ok("a damaged PDF says so", await until(() => /Could not read/.test(status())), status());
-  ok("and adds no tab", document.querySelectorAll(".glyph-tab").length === before);
+  ok("and stays on the folder page", lib());
 
   ok("the security policy refused nothing", blocked.length === 0, blocked.slice(0, 3).join(" | "));
   const problems = reports.filter((w) => !w.startsWith("pdf trace"));

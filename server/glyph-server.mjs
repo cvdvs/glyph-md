@@ -24,16 +24,20 @@
 //     literal view, so the markdown renderer never reformats a plain file.
 //   - A PDF is listed and read, never written, and the phone's browser does the
 //     parsing, so this machine never interprets one.
+//   - Voice notes are transcribed HERE, by a separate Python process
+//     (server/whisper-worker.py), started with an argument list and never a
+//     shell. The audio goes to a random 0600 temp file that is deleted after
+//     every job, and neither the audio nor what was said is ever logged.
 //   - Bind is LAN-wide so the phone can reach it, but it is meant for a home
 //     network behind a router. Do NOT port-forward it to the open internet; for
 //     access away from home use a private tunnel (Tailscale), which is
 //     encrypted and stays off the public net.
 import { createServer } from "node:http";
-import { readFile, writeFile, readdir, stat, rename, mkdir, unlink } from "node:fs/promises";
+import { readFile, writeFile, readdir, stat, lstat, rename, mkdir, unlink, link, open } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { realpathSync, existsSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { networkInterfaces, homedir, hostname } from "node:os";
+import { realpathSync, existsSync, readFileSync, accessSync, statSync, constants as FS } from "node:fs";
+import { execFileSync, execFile, spawn } from "node:child_process";
+import { networkInterfaces, homedir, hostname, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -49,6 +53,12 @@ const SKIP_DIRS = new Set([".git", ".obsidian", "node_modules", ".trash", ".DS_S
 const MAX_FILES = 5000;
 const MAX_WRITE_BYTES = 25 * 1024 * 1024;  // a .md note far past anything real
 const MAX_LOG_BYTES = 8 * 1024;
+
+// Optional settings: the HTTPS address (secure-origin) and which Python to use
+// (python). The pairing token is deliberately NOT read from here — it stays at
+// ~/.config/glyph/server-token whatever this says (rule 44), so pointing this
+// somewhere else, as the tests do, can never mint or move a token.
+const CONFIG_DIR = process.env.GLYPH_CONFIG_DIR || path.join(homedir(), ".config", "glyph");
 
 // ---------------------------------------------------------------- arguments
 const args = process.argv.slice(2).filter((a) => !a.startsWith("-"));
@@ -128,9 +138,162 @@ function isBook(p) {
   return path.extname(p).toLowerCase() === ".epub";
 }
 
+// ------------------------------------------------------- titles and previews
+// The list shows each note the way Apple Notes does: a title (the first heading,
+// or else the first line) and one line of what follows. Only the first 8KB of a
+// note is read, only for notes up to 4MB, and the result is remembered until
+// the file's mtime or size changes, so a list of a thousand notes reads almost
+// nothing after the first time. It is display text: markdown is stripped, and
+// nothing here ever writes.
+const HEAD_BYTES = 8 * 1024;
+const HEAD_MAX_FILE = 4 * 1024 * 1024;
+const TITLE_MAX = 120;
+const PREVIEW_MAX = 160;
+const metaCache = new Map();  // absolute path -> { mtimeMs, size, title, preview }
+
+function stem(name) {
+  return path.basename(name, path.extname(name));
+}
+
+function clip(s, max) {
+  const chars = [...s];
+  if (chars.length <= max) return s;
+  let cut = chars.slice(0, max - 1).join("");
+  const space = cut.lastIndexOf(" ");
+  if (space > max * 0.6) cut = cut.slice(0, space);
+  return cut.replace(/[\s.,;:]+$/u, "") + "…";
+}
+
+const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+
+// Every quantifier is bounded: a note is untrusted, and an unbounded one next
+// to a backreference is how the parsers froze before (rule 16).
+function stripInline(s) {
+  s = s
+    .replace(/`+/g, "")                                                    // code ticks
+    .replace(/!\[\[[^\]\n]{0,500}\]\]/g, "")                               // ![[embed]]
+    .replace(/!\[[^\]\n]{0,500}\]\([^)\n]{0,2000}\)/g, "")                 // ![alt](src)
+    .replace(/\[\[[^\]|\n]{0,500}?\\?\|([^\]\n]{0,500})\]\]/g, "$1")       // [[a|b]] -> b
+    .replace(/\[\[([^\]\n]{0,500})\]\]/g, "$1")                            // [[a]] -> a
+    .replace(/\[\^[^\]\n]{0,100}\]/g, "")                                  // footnote mark
+    .replace(/\[([^\]\n]{0,500})\]\([^)\n]{0,2000}\)/g, "$1")              // [text](url)
+    .replace(/\[([^\]\n]{0,500})\]\[[^\]\n]{0,200}\]/g, "$1")              // [text][ref]
+    .replace(/<((?:https?|mailto):[^>\s]{1,2000})>/g, "$1")                // <autolink>
+    .replace(/<\/?[A-Za-z][^>\n]{0,500}>/g, "")                            // html tags
+    .replace(/(\*\*|__|~~|==)(?=\S)([^\n]{0,300}?\S)\1/g, "$2")            // **b** ~~s~~ ==h==
+    .replace(/(^|[^\w*\\])\*(?=\S)([^*\n]{0,300}?\S)\*(?![\w*])/g, "$1$2") // *i*
+    .replace(/(^|[^\w\\])_(?=\S)([^_\n]{0,300}?\S)_(?!\w)/g, "$1$2")       // _i_, not snake_case
+    .replace(/\s\^[A-Za-z0-9-]{1,64}\s*$/, "");                            // block id
+  return s;
+}
+
+function stripLine(raw) {
+  let s = raw.length > 2000 ? raw.slice(0, 2000) : raw;
+  if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(s)) return "";                 // rule
+  if (/^\s{0,3}=+\s*$/.test(s)) return "";                                  // setext underline
+  if (s.includes("|") && /^[\s|:-]*-[\s|:-]*$/.test(s)) return "";          // table divider
+  if (/^\s{0,3}\[[^\]^\n][^\]\n]{0,200}\]:\s/.test(s)) return "";           // link definition
+  s = s
+    .replace(/^(\s{0,3}>\s?)+/, "")                                         // quote
+    .replace(/^\[![^\]\n]{0,64}\][+-]?\s*/, "")                             // callout
+    .replace(/^\s*(?:[-*+]|\d{1,9}[.)])\s+/, "")                            // list marker
+    .replace(/^\[[ xX/-]\]\s+/, "")                                         // task box
+    .replace(/^\s{0,3}#{1,6}(?:\s+|$)/, "")                                 // ATX heading
+    .replace(/\s+#+\s*$/, "")
+    .replace(/^\[\^[^\]\n]{1,100}\]:\s*/, "");                              // footnote text
+  const tableRow = /^\s*\|/.test(s);
+  s = stripInline(s);
+  if (tableRow) s = s.replace(/(^|[^\\])\|/g, "$1 ");
+  return s
+    .replace(/\\([\\`*_{}[\]()#+\-.!|~=<>])/g, "$1")
+    .replace(/&(amp|lt|gt|quot|apos|nbsp|#39);/g, (m, e) => ENTITIES[e])
+    .replace(/[\u0000-\u001f\u007f�]/g, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+// truncated: the text is only the head of a longer file.
+function titleAndPreview(text, name, truncated) {
+  let t = text.replace(/^﻿/, "");
+  if (/^---[ \t]*\r?\n/.test(t)) {
+    const end = /\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(t.slice(3));
+    if (end) t = t.slice(3 + end.index + end[0].length);
+    else if (truncated) return { title: stem(name), preview: "" };  // all frontmatter so far
+  }
+  // Comments are invisible on the page, so they are invisible here.
+  t = t.replace(/<!--[\s\S]*?(?:-->|$)/g, "").replace(/%%[\s\S]*?(?:%%|$)/g, "");
+
+  let title = "";
+  const rest = [];
+  let restLen = 0;
+  let fence = null;
+  for (const raw of t.split(/\r?\n/)) {
+    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
+    let line;
+    if (fence) {
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length &&
+          /^\s{0,3}[`~]+\s*$/.test(raw)) {
+        fence = null;
+        continue;
+      }
+      line = raw.replace(/[\u0000-\u001f\u007f�]/g, " ").replace(/\s+/gu, " ").trim();
+    } else if (marker) {
+      fence = marker[1];  // the marker is skipped, the code inside is text
+      continue;
+    } else {
+      line = stripLine(raw);
+    }
+    if (!line) continue;
+    if (!title) { title = line; continue; }
+    rest.push(line);
+    restLen += line.length + 1;
+    if (restLen > PREVIEW_MAX + 40) break;
+  }
+  if (!title) return { title: stem(name), preview: "" };
+  return { title: clip(title, TITLE_MAX), preview: clip(rest.join(" "), PREVIEW_MAX) };
+}
+
+async function readHead(abs) {
+  // O_NOFOLLOW: the walk only lists regular files, and this keeps it that way
+  // if a file is swapped for a link between the listing and the read.
+  const fh = await open(abs, FS.O_RDONLY | (FS.O_NOFOLLOW || 0));
+  try {
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, HEAD_BYTES, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+}
+
+async function fileMeta(abs, name, s) {
+  const hit = metaCache.get(abs);
+  if (hit && hit.mtimeMs === s.mtimeMs && hit.size === s.size) return hit;
+  let meta = { title: stem(name), preview: "" };
+  if (isServable(name) && s.size > 0 && s.size <= HEAD_MAX_FILE) {
+    try {
+      const head = await readHead(abs);
+      meta = titleAndPreview(head.toString("utf8"), name, s.size > head.length);
+    } catch {
+      return meta;  // not remembered: it may read fine next time
+    }
+  }
+  const entry = { mtimeMs: s.mtimeMs, size: s.size, ...meta };
+  metaCache.set(abs, entry);
+  return entry;
+}
+
+async function eachLimited(items, limit, fn) {
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) { const i = next++; await fn(items[i], i); }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+}
+
 // ------------------------------------------------------------- file listing
 async function listFiles() {
-  const out = [];
+  const found = [];
   async function walk(dir, relBase) {
     let entries;
     try {
@@ -139,7 +302,7 @@ async function listFiles() {
       return;
     }
     for (const e of entries) {
-      if (out.length >= MAX_FILES) return;
+      if (found.length >= MAX_FILES) return;
       if (e.name.startsWith(".") || SKIP_DIRS.has(e.name)) continue;
       const abs = path.join(dir, e.name);
       const rel = relBase ? relBase + "/" + e.name : e.name;
@@ -147,19 +310,29 @@ async function listFiles() {
         await walk(abs, rel);
       } else if (e.isFile() && (isServable(e.name) || isPdf(e.name) || isBook(e.name))) {
         try {
-          const s = await stat(abs);
-          out.push({ path: rel, name: e.name, size: s.size, mtime: Math.floor(s.mtimeMs) });
+          found.push({ abs, rel, name: e.name, s: await stat(abs) });
         } catch { /* skip unreadable */ }
       }
     }
   }
   await walk(ROOT, "");
+  const out = new Array(found.length);
+  await eachLimited(found, 16, async ({ abs, rel, name, s }, i) => {
+    const { title, preview } = await fileMeta(abs, name, s);
+    out[i] = { path: rel, name, size: s.size, mtime: Math.floor(s.mtimeMs), title, preview };
+  });
+  // Forget files that are gone (renamed, deleted), so the cache cannot grow forever.
+  const seen = new Set(found.map((f) => f.abs));
+  for (const k of metaCache.keys()) if (!seen.has(k)) metaCache.delete(k);
   out.sort((a, b) => b.mtime - a.mtime);  // most-recently-edited first
   return out;
 }
 
 // ------------------------------------------------------------- atomic write
-async function writeAtomic(abs, text) {
+// exclusive: never replace anything at abs, not even a dangling symlink. The
+// temp file is hard-linked into place, and link() refuses an existing name, so
+// a file that appears after the caller looked is still not overwritten.
+async function writeAtomic(abs, text, { exclusive = false } = {}) {
   // A RANDOM temp name created with O_EXCL ("wx"). If the served folder holds
   // untrusted content (cloned repos, downloads, shared vaults — the project's
   // standing threat model, and git preserves symlinks), an attacker can plant a
@@ -170,11 +343,38 @@ async function writeAtomic(abs, text) {
   const tmp = abs + "." + randomBytes(6).toString("hex") + ".glyph-tmp";
   try {
     await writeFile(tmp, text, { encoding: "utf8", mode: 0o644, flag: "wx" });
-    await rename(tmp, abs);
+    if (!exclusive) {
+      await rename(tmp, abs);
+      return;
+    }
+    try {
+      await link(tmp, abs);
+    } catch (e) {
+      // A volume with no hard links (exFAT): check, then rename.
+      if (!["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"].includes(e.code)) throw e;
+      if (await lstat(abs).then(() => true, () => false)) {
+        throw Object.assign(new Error("exists"), { code: "EEXIST" });
+      }
+      await rename(tmp, abs);
+      return;
+    }
+    await unlink(tmp).catch(() => {});
   } catch (e) {
     await unlink(tmp).catch(() => {});
     throw e;
   }
+}
+
+function inRoot(real) {
+  return real === ROOT || real.startsWith(ROOT + path.sep);
+}
+
+// A new note name typed on a phone: one plain name, never a path or a hidden
+// file, short enough for any filesystem.
+function plainName(n) {
+  if (!n || n.startsWith(".") || /[/\\]/.test(n) || /[\u0000-\u001f\u007f-\u009f]/.test(n)) return false;
+  if ([...n].length > 120 || Buffer.byteLength(n, "utf8") > 255) return false;
+  return stem(n).trim() !== "";
 }
 
 // --------------------------------------------------------- the served page
@@ -263,6 +463,266 @@ async function composePage() {
 }
 let PAGE = await composePage();
 
+// ------------------------------------------------------------ secure origin
+// The HTTPS address of this same server (a `tailscale serve` front door), if
+// there is one. A phone's microphone only works on an https page, so the page
+// asks for this and offers to move there. One line in CONFIG_DIR/secure-origin,
+// and only a bare https origin is ever handed out.
+async function secureOrigin() {
+  try {
+    const line = (await readFile(path.join(CONFIG_DIR, "secure-origin"), "utf8")).split(/\r?\n/)[0].trim();
+    const m = /^https:\/\/[a-z0-9.-]+(?::(\d{1,5}))?$/i.exec(line);
+    if (!m || (m[1] && Number(m[1]) > 65535)) return null;
+    return line;
+  } catch {
+    return null;
+  }
+}
+
+// -------------------------------------------------------------------- voice
+// A voice note is recorded on the phone and transcribed here by mlx_whisper, in
+// server/whisper-worker.py: a separate, persistent Python process that holds the
+// model in memory, started on the first transcription and stopped after 15 idle
+// minutes. One job at a time. Audio and transcripts are never logged — only
+// sizes and durations.
+const AUDIO_TYPES = new Map([
+  ["audio/mp4", ".m4a"], ["audio/x-m4a", ".m4a"], ["audio/aac", ".aac"],
+  ["audio/webm", ".webm"], ["audio/ogg", ".ogg"], ["audio/wav", ".wav"],
+  ["audio/x-wav", ".wav"], ["audio/mpeg", ".mp3"],
+]);
+const MAX_AUDIO_BYTES = 40 * 1024 * 1024;
+const VOICE_TIMEOUT_MS = Number(process.env.GLYPH_VOICE_TIMEOUT_MS) || 120_000;  // the env is for tests
+const VOICE_IDLE_MS = 15 * 60_000;
+const VOICE_RECHECK_MS = 60_000;
+const VOICE_QUEUE_MAX = 4;
+const PARAGRAPH_GAP = 1.5;  // seconds of silence that start a new paragraph
+// A LaunchAgent has almost no PATH, and mlx_whisper runs `ffmpeg` by name.
+const WORKER_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+
+// GLYPH_WHISPER_CMD replaces Python and the worker with any program that speaks
+// the same JSON lines (Scripts/fake-whisper.mjs, for the tests). Set but not a
+// JSON array of strings means voice is off — never a silent fall back to Python.
+const WHISPER_CMD = (() => {
+  const raw = process.env.GLYPH_WHISPER_CMD;
+  if (!raw) return undefined;
+  try {
+    const a = JSON.parse(raw);
+    if (Array.isArray(a) && a.length && a.every((x) => typeof x === "string" && x)) return a;
+  } catch { /* reported below */ }
+  console.log("glyph-voice: GLYPH_WHISPER_CMD is not a JSON array of strings; voice is off");
+  return null;
+})();
+
+function workerEnv() {
+  const dirs = (process.env.PATH || "").split(":").filter(Boolean);
+  return {
+    ...process.env,
+    PATH: [...new Set([...dirs, ...WORKER_PATH])].join(":"),
+    HF_HUB_OFFLINE: "1",           // never download a model from here
+    HF_HUB_DISABLE_TELEMETRY: "1",
+    PYTHONUNBUFFERED: "1",
+    PYTHONSAFEPATH: "1",           // no module is ever imported from the working folder
+  };
+}
+
+function isExecutable(p) {
+  try {
+    accessSync(p, FS.X_OK);
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function pythonCandidates() {
+  const out = [];
+  if (process.env.GLYPH_PYTHON) out.push(process.env.GLYPH_PYTHON);
+  try {
+    const line = readFileSync(path.join(CONFIG_DIR, "python"), "utf8").split(/\r?\n/)[0].trim();
+    if (path.isAbsolute(line) && !/[\u0000-\u001f]/.test(line)) out.push(line);
+  } catch { /* no such file */ }
+  const onPath = (process.env.PATH || "").split(":")
+    .filter((d) => path.isAbsolute(d)).map((d) => path.join(d, "python3")).find(isExecutable);
+  if (onPath) out.push(onPath);
+  out.push("/opt/homebrew/bin/python3", "/usr/local/bin/python3");
+  return [...new Set(out)];
+}
+
+// cwd is this folder, which holds no Python modules, so `-c` cannot pick up a
+// planted numpy.py from wherever the server was started.
+function importsWhisper(python) {
+  return new Promise((resolve) => {
+    execFile(python, ["-c", "import mlx_whisper"],
+      { cwd: HERE, env: workerEnv(), timeout: 20_000, killSignal: "SIGKILL", windowsHide: true },
+      (err) => resolve(!err));
+  });
+}
+
+const voice = { available: false, python: null, checkedAt: 0, checking: null };
+
+function checkVoice() {
+  if (!voice.checking) {
+    voice.checking = (async () => {
+      for (const py of pythonCandidates()) {
+        if (await importsWhisper(py)) {
+          voice.python = py;
+          voice.available = true;
+          break;
+        }
+      }
+      voice.checkedAt = Date.now();
+      voice.checking = null;
+      console.log(voice.available
+        ? `glyph-voice: ready, using ${voice.python}`
+        : "glyph-voice: off, no Python with mlx_whisper was found");
+      return voice.available;
+    })();
+  }
+  return voice.checking;
+}
+
+async function voiceAvailable() {
+  if (WHISPER_CMD !== undefined) return !!WHISPER_CMD;
+  if (voice.available) return true;
+  if (!voice.checking && Date.now() - voice.checkedAt > VOICE_RECHECK_MS) checkVoice();
+  if (voice.checking) {
+    await Promise.race([voice.checking, new Promise((r) => setTimeout(r, 25_000).unref())]);
+  }
+  return voice.available;
+}
+
+const worker = { proc: null, buf: "", job: null, idle: null, nextId: 1, startedAt: 0 };
+
+function armIdle() {
+  clearTimeout(worker.idle);
+  worker.idle = setTimeout(() => {
+    if (worker.job || !worker.proc) return;
+    const proc = worker.proc;
+    worker.proc = null;
+    proc.kill("SIGTERM");
+  }, VOICE_IDLE_MS);
+  worker.idle.unref();
+}
+
+function startWorker() {
+  if (worker.proc) return worker.proc;
+  const [cmd, ...argv] = WHISPER_CMD || [voice.python, path.join(HERE, "whisper-worker.py")];
+  const proc = spawn(cmd, argv, {
+    cwd: WHISPER_CMD ? REPO : HERE,
+    env: workerEnv(),
+    stdio: ["pipe", "pipe", "ignore"],  // stderr is a library's chatter, and is never logged
+    windowsHide: true,
+  });
+  worker.proc = proc;
+  worker.buf = "";
+  worker.startedAt = Date.now();
+  proc.stdin.on("error", () => { /* it died; "close" reports it */ });
+  proc.stdout.setEncoding("utf8");
+  proc.stdout.on("data", (chunk) => {
+    if (worker.proc !== proc) return;
+    worker.buf += chunk;
+    if (worker.buf.length > 8 * 1024 * 1024) { proc.kill("SIGKILL"); return; }
+    let nl;
+    while ((nl = worker.buf.indexOf("\n")) >= 0) {
+      const line = worker.buf.slice(0, nl);
+      worker.buf = worker.buf.slice(nl + 1);
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+      if (!msg || typeof msg !== "object") continue;
+      if ("ready" in msg || "fatal" in msg) {
+        const secs = ((Date.now() - worker.startedAt) / 1000).toFixed(1);
+        const why = String(msg.fatal || msg.error || "").replace(/[^\w.]/g, "").slice(0, 60);
+        if (msg.ready) console.log(`glyph-voice: model loaded in ${secs}s`);
+        else if (msg.fatal) console.log(`glyph-voice: worker could not start (${why})`);
+        else console.log(`glyph-voice: the model did not load (${why})`);
+        // It passed the import check and now fails it: off until the next look.
+        if (msg.fatal && !WHISPER_CMD) { voice.available = false; voice.checkedAt = Date.now(); }
+      } else if (worker.job && msg.id === worker.job.id) {
+        worker.job.done(null, msg);
+      }
+    }
+  });
+  // "close", not "exit": a reply written just before exiting is still read.
+  const gone = (err) => {
+    if (worker.proc !== proc) return;
+    worker.proc = null;
+    clearTimeout(worker.idle);
+    if (worker.job) worker.job.done(Object.assign(new Error("worker exited"), { code: "crash" }));
+    if (err && err.code === "ENOENT" && !WHISPER_CMD) {
+      voice.available = false;  // that Python has gone; look again on the next request
+      voice.checkedAt = 0;
+    }
+  };
+  proc.on("close", () => gone());
+  proc.on("error", (e) => gone(e));
+  armIdle();
+  return proc;
+}
+
+function runJob(file, language) {
+  return new Promise((resolve, reject) => {
+    const proc = startWorker();
+    const job = {
+      id: worker.nextId++,
+      done(err, msg) {
+        if (worker.job !== job) return;
+        worker.job = null;
+        clearTimeout(timer);
+        armIdle();
+        if (err) reject(err); else resolve(msg);
+      },
+    };
+    // A stuck job cannot be interrupted, so the whole worker goes and the next
+    // job starts a fresh one. Detached first, so nothing new is sent to it.
+    const timer = setTimeout(() => {
+      if (worker.proc === proc) worker.proc = null;
+      job.done(Object.assign(new Error("timeout"), { code: "timeout" }));
+      proc.kill("SIGKILL");
+    }, VOICE_TIMEOUT_MS);
+    worker.job = job;
+    clearTimeout(worker.idle);
+    proc.stdin.write(JSON.stringify({ id: job.id, path: file, language }) + "\n");
+  });
+}
+
+let voiceChain = Promise.resolve();
+let voiceQueued = 0;
+function transcribeQueued(file, language) {
+  voiceQueued++;
+  const run = voiceChain.then(() => runJob(file, language));
+  voiceChain = run.then(() => {}, () => {});
+  return run.finally(() => { voiceQueued--; });
+}
+
+// Whisper's segments become paragraphs: a pause of PARAGRAPH_GAP or more starts
+// a new one, each starts with a capital and ends with a full stop if it ended on
+// a letter or a digit. Unicode-aware, so a Romanian ă or ș capitalizes too.
+function formatTranscript(segments) {
+  if (!Array.isArray(segments)) return "";
+  const paras = [];
+  let cur = [];
+  let prevEnd = null;
+  for (const seg of segments) {
+    if (!seg || typeof seg.text !== "string") continue;
+    const text = seg.text.replace(/\s+/gu, " ").trim();
+    if (!text) continue;
+    const start = Number(seg.start);
+    if (cur.length && prevEnd !== null && start - prevEnd >= PARAGRAPH_GAP - 1e-6) {
+      paras.push(cur.join(" "));
+      cur = [];
+    }
+    cur.push(text);
+    if (Number.isFinite(Number(seg.end))) prevEnd = Number(seg.end);
+  }
+  if (cur.length) paras.push(cur.join(" "));
+  return paras.map((p) => {
+    let s = p.replace(/\s+/gu, " ").trim();
+    s = s.replace(/^([\p{Ps}\p{Pi}"'¿¡]*)(\p{Ll})/u, (m, pre, ch) => pre + ch.toUpperCase());
+    if (/[\p{L}\p{N}]$/u.test(s)) s += ".";
+    return s;
+  }).filter(Boolean).join("\n\n").trim();
+}
+
 // ------------------------------------------------------------------ routing
 function send(res, status, body, headers = {}) {
   res.writeHead(status, {
@@ -350,6 +810,107 @@ const server = createServer(async (req, res) => {
         return json(res, 200, { root: path.basename(ROOT), files: await listFiles() });
       }
 
+      if (req.method === "GET" && p === "/api/info") {
+        return json(res, 200, { secureOrigin: await secureOrigin() });
+      }
+
+      if (req.method === "GET" && p === "/api/voice") {
+        return json(res, 200, { available: await voiceAvailable() });
+      }
+
+      if (req.method === "POST" && p === "/api/transcribe") {
+        const lang = url.searchParams.get("lang") || "auto";
+        if (!["auto", "en", "ro"].includes(lang)) return json(res, 400, { error: "bad lang" });
+        const type = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+        const ext = AUDIO_TYPES.get(type);
+        if (!ext) return json(res, 415, { error: "unsupported audio type" });
+        if (!(await voiceAvailable())) return json(res, 503, { error: "voice unavailable" });
+        if (voiceQueued >= VOICE_QUEUE_MAX) return json(res, 503, { error: "busy" });
+        // Start loading the model while the audio is still arriving.
+        if (!worker.proc && !worker.job) startWorker();
+        // Over the limit, readBody hangs up, as it does for an oversized note.
+        const audio = await readBody(req, MAX_AUDIO_BYTES);
+        if (audio.length === 0) return json(res, 422, { error: "no speech" });
+        const kb = Math.round(audio.length / 1024);
+        const tmp = path.join(tmpdir(), `glyph-voice-${randomBytes(12).toString("hex")}${ext}`);
+        const t0 = Date.now();
+        let msg;
+        try {
+          await writeFile(tmp, audio, { mode: 0o600, flag: "wx" });
+          msg = await transcribeQueued(tmp, lang === "auto" ? null : lang);
+        } catch (e) {
+          const why = e && e.code === "timeout" ? "timed out" : e && e.code === "crash" ? "worker exited" : "error";
+          console.log(`glyph-voice: ${kb} KB ${why} after ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+          return e && e.code === "timeout"
+            ? json(res, 504, { error: "timeout" })
+            : json(res, 500, { error: "transcription failed" });
+        } finally {
+          await unlink(tmp).catch(() => {});
+        }
+        if (typeof msg.error === "string") {
+          console.log(`glyph-voice: ${kb} KB failed in the worker (${msg.error.replace(/[^\w.]/g, "").slice(0, 60)})`);
+          return json(res, 500, { error: "transcription failed" });
+        }
+        const text = formatTranscript(msg.segments);
+        const segs = Array.isArray(msg.segments) ? msg.segments : [];
+        const last = segs.length ? Number(segs[segs.length - 1].end) : 0;
+        const dur = Number.isFinite(msg.duration) ? msg.duration : Number.isFinite(last) ? last : 0;
+        const seconds = Math.round(dur * 10) / 10;
+        console.log(`glyph-voice: ${seconds}s of audio, ${kb} KB, ` +
+          `${text ? "transcribed" : "no speech"} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+        if (!text) return json(res, 422, { error: "no speech" });
+        const language = typeof msg.language === "string" && /^[a-z]{2,3}$/i.test(msg.language)
+          ? msg.language.toLowerCase() : null;
+        return json(res, 200, { text, language, seconds });
+      }
+
+      // Rename a note within its own folder. Text notes only: a PDF or a book is
+      // never written, and a rename is a write.
+      if (req.method === "POST" && p === "/api/rename") {
+        let body;
+        try {
+          body = JSON.parse((await readBody(req, MAX_LOG_BYTES)).toString("utf8"));
+        } catch {
+          return json(res, 400, { error: "bad body" });
+        }
+        const fromAbs = resolveInRoot(body && body.from);
+        const toAbs = resolveInRoot(body && body.to);
+        if (!fromAbs || !toAbs || !isServable(fromAbs) || !isServable(toAbs)) {
+          return json(res, 400, { error: "bad path" });
+        }
+        if (path.dirname(fromAbs) !== path.dirname(toAbs)) return json(res, 400, { error: "different folder" });
+        if (!plainName(path.basename(toAbs))) return json(res, 400, { error: "bad name" });
+        let fromStat;
+        try {
+          fromStat = await lstat(fromAbs);
+        } catch {
+          return json(res, 404, { error: "not found" });
+        }
+        // The note and its folder must both really be inside the root: a symlink
+        // out, or a folder that is a link to elsewhere, is refused.
+        try {
+          if (!inRoot(realpathSync(fromAbs)) || !inRoot(realpathSync(path.dirname(fromAbs))) ||
+              !(await stat(fromAbs)).isFile()) {
+            return json(res, 400, { error: "bad path" });
+          }
+        } catch {
+          return json(res, 400, { error: "bad path" });
+        }
+        try {
+          const there = await lstat(toAbs);
+          // The same file under another case ("note.md" -> "Note.md") on a
+          // case-insensitive disk is a rename, not a clash.
+          if (there.ino !== fromStat.ino || there.dev !== fromStat.dev) {
+            return json(res, 409, { error: "exists" });
+          }
+        } catch { /* free: good */ }
+        await rename(fromAbs, toAbs);
+        const s = await stat(toAbs);
+        // The same spelling the list uses, whatever the request looked like.
+        const rel = path.relative(ROOT, toAbs).split(path.sep).join("/");
+        return json(res, 200, { path: rel, mtime: Math.floor(s.mtimeMs) });
+      }
+
       if (req.method === "GET" && p === "/api/file") {
         const abs = resolveInRoot(url.searchParams.get("path") || "");
         if (!abs || !isServable(abs)) return json(res, 400, { error: "bad path" });
@@ -415,6 +976,17 @@ const server = createServer(async (req, res) => {
         }
         if (parentReal !== ROOT && !parentReal.startsWith(ROOT + path.sep)) {
           return json(res, 400, { error: "bad path" });
+        }
+        // A new note: refuse rather than replace anything already there.
+        if (body.create === true) {
+          try {
+            await writeAtomic(abs, body.text, { exclusive: true });
+          } catch (e) {
+            if (e.code === "EEXIST") return json(res, 409, { error: "exists" });
+            throw e;
+          }
+          const s2 = await stat(abs);
+          return json(res, 200, { path: body.path, mtime: Math.floor(s2.mtimeMs) });
         }
         // If the file changed on disk since the phone loaded it (edited on the
         // Mac at the same time), refuse rather than clobber the newer version.
@@ -546,4 +1118,7 @@ server.listen(port, "0.0.0.0", () => {
   console.log("  Do NOT port-forward this to the internet, and do not enable Tailscale");
   console.log("  Funnel on it: both would put your notes on the public web.  Ctrl-C to stop.");
   console.log("");
+  // Looked for after the banner, in the background: importing mlx takes a
+  // second or two, and the notes should not wait for it.
+  if (WHISPER_CMD === undefined) checkVoice();
 });

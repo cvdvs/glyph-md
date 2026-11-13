@@ -14,7 +14,7 @@ plutil -replace CFBundleIdentifier -string com.goodglyph.glyph.doc-smoke "$APP/C
 [ -n "$1" ] && cp "$1" "$APP/Contents/Resources/viewer.html"
 clang -fobjc-arc -Wno-deprecated-declarations -Wno-undeclared-selector \
   -target "$(uname -m)-apple-macos13.0" \
-  Scripts/doc-smoke.m Sources/MarkdownDocument.m Sources/GlyphPDFDocument.m Sources/GlyphBookDocument.m \
+  Scripts/doc-smoke.m Sources/MarkdownDocument.m Sources/GlyphPDFDocument.m Sources/GlyphBookDocument.m Sources/GlyphLibrary.m \
   Sources/GlyphTheme.m Sources/GlyphHighlighter.m Sources/GlyphGutter.m Sources/GlyphVault.m \
   -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers -framework PDFKit \
   -o "$APP/Contents/MacOS/Glyph"

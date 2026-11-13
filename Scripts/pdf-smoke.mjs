@@ -3,7 +3,7 @@
 //
 //   node Scripts/pdf-smoke.mjs                      Blink (headless Chrome)
 //   node Scripts/pdf-smoke.mjs --webkit <harness>   WebKit (see Scripts/pdf-webkit.m)
-//   add --suite book-smoke to run Scripts/book-smoke.js instead of pdf-smoke.js
+//   add --suite book-smoke or --suite notes-smoke to run that page suite instead
 //
 // The page-side suite can only see the page, so this side checks what actually
 // matters afterwards, on disk: no PDF or book changed by a single byte, and the one
@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, utimes, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,8 @@ const flag = (name) => {
 };
 const webkit = flag("--webkit");
 const suiteName = flag("--suite") || "pdf-smoke";
+// The three-pane layout is a wide window's, so its suite runs at desktop size.
+const desktop = suiteName === "wide-smoke";
 const SEED = `try { localStorage.setItem("glyphReaderSize", "19"); } catch (e) {}
   window.__startupErrors = [];
   window.addEventListener("error", (e) => window.__startupErrors.push(e.message));`;
@@ -227,6 +229,11 @@ await writeFile(path.join(root, "notes.txt"), "plain text\n");
 const other = "# Other\n\n* star bullet\n";
 await writeFile(path.join(root, "other.md"), other);
 await writeFile(path.join(root, "edited.md"), "# Edited\n\n* star bullet\n");
+// A folder, and a note old enough to sort under its year.
+await mkdir(path.join(root, "drafts"));
+await writeFile(path.join(root, "drafts", "plan.md"), "# Plan for spring\n\nThree things to finish before March.\n");
+await writeFile(path.join(root, "drafts", "ideas.md"), "Loose ideas\n\nA reader for the train.\n");
+await utimes(path.join(root, "drafts", "ideas.md"), new Date("2024-05-02"), new Date("2024-05-02"));
 const books = {
   "novel.epub": makeNovel(),
   "old.epub": makeOldBook(),
@@ -246,8 +253,10 @@ const books = {
 for (const [name, bytes] of Object.entries(books)) await writeFile(path.join(root, name), bytes);
 
 const PORT = 30000 + (process.pid % 9000);
+// Whisper is played by a stand-in that answers by the text it is sent.
 const srv = spawn(process.execPath, [path.join(HERE, "..", "server", "glyph-server.mjs"), root, `--port=${PORT}`],
-                  { stdio: ["ignore", "pipe", "pipe"] });
+                  { stdio: ["ignore", "pipe", "pipe"],
+                    env: { ...process.env, GLYPH_WHISPER_CMD: JSON.stringify([process.execPath, path.join(HERE, "fake-whisper.mjs")]) } });
 let browser = null;
 const cleanup = () => {
   try { srv.kill("SIGKILL"); } catch {}
@@ -308,7 +317,9 @@ async function runInChrome() {
       S("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
     }
   });
-  await S("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
+  await S("Emulation.setDeviceMetricsOverride", desktop
+    ? { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false }
+    : { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
   await S("Page.addScriptToEvaluateOnNewDocument", { source: SEED });
   await S("Page.navigate", { url: pageUrl });
   await sleep(1500);
@@ -329,7 +340,8 @@ async function runInChrome() {
 function runInWebKit() {
   return new Promise((resolve, reject) => {
     browser = spawn(webkit, [path.join(HERE, suiteName + ".js")], { stdio: ["ignore", "pipe", "inherit"],
-                    env: { ...process.env, GLYPH_URL: pageUrl, GLYPH_SEED: SEED } });
+                    env: { ...process.env, GLYPH_URL: pageUrl, GLYPH_SEED: SEED,
+                           ...(desktop ? { GLYPH_SIZE: "1280x800" } : {}) } });
     let text = "";
     browser.stdout.on("data", (d) => { text += d; });
     browser.on("exit", (code) => (code === 0 ? resolve(text) : reject(new Error("harness exit " + code))));
@@ -349,7 +361,28 @@ try {
   results.push({ what: "broken.pdf too",
                  pass: sha(await readFile(path.join(root, "broken.pdf"))) === sha(broken), detail: "" });
   const note = await readFile(path.join(root, "note.md"), "utf8");
-  results.push(suiteName === "book-smoke"
+  if (suiteName === "wide-smoke") {
+    results.push({ what: "a note made with a folder chosen on the left went into that folder",
+                   pass: (await readdir(path.join(root, "drafts"))).includes("Desk idea.md"), detail: "" });
+  }
+  if (suiteName === "notes-smoke") {
+    const made = (await readdir(root)).filter((n) => n.endsWith(".md"));
+    results.push({ what: "a new note was saved under its first line",
+                   pass: /^# Grocery list\n/.test(await readFile(path.join(root, "Grocery list.md"), "utf8").catch(() => "")),
+                   detail: made.join(", ") });
+    results.push({ what: "a second one with the same title got a number, not the first one's file",
+                   pass: made.includes("Grocery list 2.md") &&
+                         /Eggs/.test(await readFile(path.join(root, "Grocery list.md"), "utf8")), detail: "" });
+    results.push({ what: "an empty new note left no file behind", pass: !made.some((n) => /^New note/.test(n)), detail: "" });
+    results.push({ what: "the dictation reached the note on disk", pass: /Zebra/.test(note) && /\[ \]/.test(note), detail: "" });
+    const voiceNote = made.find((n) => /^Zebra/.test(n));
+    results.push({ what: "a voice note became a file of its own", pass: !!voiceNote, detail: voiceNote || "" });
+  }
+  results.push(suiteName === "notes-smoke"
+    ? { what: "the note kept everything typed into it", pass: /Plain words added/.test(note), detail: "" }
+    : suiteName === "wide-smoke"
+    ? { what: "the note on disk is untouched by just reading it", pass: note === "# Note\n\nA note beside the PDF.\n", detail: "" }
+    : suiteName === "book-smoke"
     ? { what: "the note beside the book took the edit made to it", pass: /BESIDE/.test(note), detail: "" }
     : { what: "every edit reached the note on disk",
         pass: /EDITED/.test(note) && /AGAIN/.test(note) && /THIRD/.test(note), detail: "" });

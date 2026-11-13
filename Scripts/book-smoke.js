@@ -33,11 +33,18 @@
   const startedAt = location.href;
 
   const body = document.body;
-  const row = (label) =>
-    [...document.querySelectorAll(".glyph-tree-row.file")]
-      .find((r) => r.querySelector(".tn").textContent === label);
-  const tab = (label) =>
-    [...document.querySelectorAll(".glyph-tab")].find((t) => t.textContent.includes(label));
+  // The phone moves like Notes: a folder page, a file page, and Back between them.
+  const lib = () => body.classList.contains("glyph-library");
+  const back = () => document.querySelector("#glyph-nav .glyph-round").click();
+  const rowIn = (label) => [...document.querySelectorAll(".glyph-lib-note")].find((r) => {
+    const base = r.dataset.path.split("/").pop();
+    return base === label || base === label + ".md";
+  });
+  const open = async (label) => {
+    if (!lib()) { back(); await until(lib); }
+    (await until(() => rowIn(label))).click();
+  };
+  const dock = () => getComputedStyle(document.getElementById("glyph-dock")).display;
   const status = () => document.getElementById("glyph-status").textContent;
   const q = (s) => document.querySelector(s);
   const text = () => q(".glyph-book-text");
@@ -49,13 +56,13 @@
   const pick = (value) => [...document.querySelectorAll(".glyph-book-panel button")]
     .find((b) => b.textContent === value);
 
-  await until(() => row("novel.epub"));
-  ok("a book is in the file list, extension showing", row("novel.epub"));
-  row("novel.epub").click();
+  await until(() => rowIn("novel.epub"));
+  ok("a book is in the folder, marked as a book", /Book/.test(rowIn("novel.epub").textContent), rowIn("novel.epub").textContent);
+  await open("novel.epub");
   await until(() => text() && text().querySelector("img"));
-  ok("it opens in a tab named after the book", tab("The Test Book"));
+  ok("it opens on a page of its own, titled after the book", !lib() && /^The Test Book/.test(document.title), document.title);
   ok("the status shows the place in it", status() === "1 of 4", status());
-  ok("the toolbar is out of the way", style(q("#glyph-tools")).display === "none");
+  ok("the tools are out of the way", dock() === "none", dock());
   const cover = text().querySelector("img");
   ok("a cover drawn as <svg><image> comes through as a picture from the zip",
     cover && await until(() => cover.naturalWidth === 1 && cover.src.startsWith("data:image/png")));
@@ -130,7 +137,7 @@
   ok("words inside stripped tags stay", has("covering div") && has("forged flags"));
   ok("a book cannot forge the reader's own flags",
     style(span("forged flags")).fontStyle === "normal" && !span("forged flags").dataset.bookId);
-  ok("a book cannot clobber the page", q("#glyph-menu").tagName === "BUTTON" && document.body.tagName === "BODY");
+  ok("a book cannot clobber the page", q("#glyph-nav").tagName === "NAV" && document.body.tagName === "BODY");
   ok("a fixed element cannot cover the screen",
     ![...text().querySelectorAll("*")].some((n) => style(n).position === "fixed"));
   ok("no refresh or base took effect", location.href === startedAt && !q("head base"));
@@ -164,33 +171,85 @@
   await until(() => style(q(".glyph-book-panel")).display === "none");
   ok("tapping outside closes the panel", style(q(".glyph-book-panel")).display === "none");
 
+  // Pages: one screen at a time, turned by a tap, a swipe or an arrow key.
+  const placeNow = () => q(".glyph-book-place").textContent;
+  const pageNow = () => Number((/^Page (\d+) of (\d+)$/.exec(placeNow()) || [])[1]);
+  const pagesNow = () => Number((/^Page (\d+) of (\d+)$/.exec(placeNow()) || [])[2]);
+  bar("Aa").click();
+  await until(() => style(q(".glyph-book-panel")).display !== "none");
+  pick("Pages").click();
+  await until(() => q(".glyph-book").classList.contains("glyph-book-paged") && pagesNow() > 1);
+  q(".glyph-book-scrim").click();
+  await sleep(300);
+  ok("Pages lays the chapter out a screen at a time", pagesNow() > 3, placeNow());
+  ok("and the window itself no longer scrolls", document.documentElement.scrollHeight <= innerHeight + 2,
+    document.documentElement.scrollHeight + " vs " + innerHeight);
+  const first = pageNow();
+  text().dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: innerWidth * 0.92, clientY: innerHeight / 2 }));
+  ok("a tap near the right edge turns the page", await until(() => pageNow() === first + 1), placeNow());
+  // One screen is the text's own width plus the gap to the next column.
+  const screenWide = () => text().clientWidth - parseFloat(getComputedStyle(text()).paddingLeft) * 2 +
+    parseFloat(getComputedStyle(text()).columnGap);
+  ok("by exactly one screen", await until(() => Math.abs(text().scrollLeft - (pageNow() - 1) * screenWide()) < 2),
+    text().scrollLeft + " vs " + (pageNow() - 1) * screenWide());
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+  ok("the left arrow turns back", await until(() => pageNow() === first), placeNow());
+  const chapterHere = status();
+  for (let i = 0; i < 80 && pageNow() < pagesNow(); i++) {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    await sleep(30);
+  }
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  ok("past the last page is the next chapter", await until(() => status() !== chapterHere && pageNow() === 1),
+    chapterHere + " -> " + status() + " " + placeNow());
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+  ok("and back from its first page is the last page before",
+    await until(() => status() === chapterHere && pageNow() === pagesNow()), status() + " " + placeNow());
+  bar("Aa").click();
+  await until(() => style(q(".glyph-book-panel")).display !== "none");
+  pick("Two").click();
+  await until(() => getComputedStyle(text()).columnCount === "2");
+  ok("Two shows two pages side by side", getComputedStyle(text()).columnCount === "2" &&
+    q(".glyph-book").classList.contains("glyph-book-two"));
+  pick("One").click();
+  pick("Scroll").click();
+  await until(() => !q(".glyph-book").classList.contains("glyph-book-paged"));
+  ok("and Scroll puts it back", !q(".glyph-book").classList.contains("glyph-book-paged") && /of 4$/.test(placeNow()), placeNow());
+  q(".glyph-book-scrim").click();
+  await until(() => style(q(".glyph-book-panel")).display === "none");
+  if (status() !== "3 of 4") {
+    bar("Previous").click();
+    await until(() => status() === "3 of 4");
+  }
+
   // A note beside it: the book stands aside, and the note still works.
   window.scrollTo(0, 2000);
   await sleep(700);
   const where = window.scrollY;
-  row("note").click();
+  await open("note");
   await until(() => !body.classList.contains("glyph-reading") && q("#md") && q("#md").innerText.includes("A note beside"));
   ok("a note opens beside the book", q("#md").innerText.includes("A note beside"));
-  ok("the toolbar comes back for it", style(q("#glyph-tools")).display !== "none");
+  ok("the tools come back for it", dock() !== "none", dock());
   const md = q("#md");
   md.focus();
   getSelection().selectAllChildren(md);
   getSelection().collapseToEnd();
   document.execCommand("insertText", false, " BESIDE");
-  tab("The Test Book").click();
+  await open("novel.epub");
   await until(() => body.classList.contains("glyph-reading"));
   await sleep(1200);
   ok("the book comes back where it was", Math.abs(window.scrollY - where) < 5, window.scrollY + " vs " + where);
   ok("and an edit in flight lands on the note, nowhere else",
     writes.length >= 1 && writes.every((w) => w.path === "note.md"), JSON.stringify(writes.map((w) => w.path)));
-  ok("no tab is left marked unsaved", !q(".glyph-tab.dirty"));
+  ok("nothing is left waiting to save", !/unsaved|Offline/.test(status()), status());
 
-  // Reading is remembered: close it and open it again.
+  // Reading is remembered. Opening another book lets this one go from memory,
+  // so opening it again has to find its place from what was saved.
   await sleep(700);
-  tab("The Test Book").querySelector(".x").click();
-  await until(() => !tab("The Test Book"));
-  ok("closing the tab clears the book", !q(".glyph-book"));
-  row("novel.epub").click();
+  await open("fonts.epub");
+  ok("scrambled fonts alone do not count as locked", await until(() => has("Only the fonts are scrambled")));
+  ok("a newer book lets the older one go", !q("#glyph-book .glyph-book-text") || !has("The far paragraph"));
+  await open("novel.epub");
   await until(() => has("The far paragraph"));
   await sleep(300);
   ok("it reopens at the same chapter", status() === "3 of 4", status());
@@ -198,8 +257,7 @@
   ok("with the same settings", /Charter/.test(style(text()).fontFamily) &&
     style(q(".glyph-book")).backgroundColor === "rgb(239, 226, 201)");
 
-  // The older form, which is most real books.
-  row("scan.epub").click();
+  await open("scan.epub");
   await until(() => has("The first page"));
   const held = () => [...text().querySelectorAll("img")].filter((i) => i.getAttribute("src")).length;
   const shots = () => [...text().querySelectorAll("img")];
@@ -211,10 +269,9 @@
   ok("the last picture draws when you reach it", await until(() => shots()[199].naturalWidth === 1));
   ok("pictures far behind let go", await until(() => !shots()[0].getAttribute("src")));
   ok("and the count stays small", held() < 40, held() + " of " + shots().length);
-  tab("A Scanned Book").querySelector(".x").click();
-  await until(() => !tab("A Scanned Book"));
 
-  row("old.epub").click();
+  // The older form, which is most real books.
+  await open("old.epub");
   await until(() => has("After an anchor"));
   bar("Contents").click();
   await until(() => style(document.querySelectorAll(".glyph-book-sheet")[0]).display !== "none");
@@ -228,18 +285,12 @@
   await until(() => has("au lait"));
   ok("a page in an older encoding reads correctly", has("café au lait"), text().innerText);
 
-  row("fonts.epub").click();
-  ok("scrambled fonts alone do not count as locked",
-    await until(() => has("Only the fonts are scrambled")));
-
-  const tabs = () => document.querySelectorAll(".glyph-tab").length;
-  const before = tabs();
-  row("locked.epub").click();
+  await open("locked.epub");
   ok("a copy-protected book says so", await until(() => /copy-protected/.test(status())), status());
-  row("notabook.epub").click();
+  rowIn("notabook.epub").click();
   ok("a file that isn't a book says so", await until(() => /isn.t a readable book/.test(status())), status());
-  ok("neither of those added a tab", tabs() === before, tabs() + " vs " + before);
-  row("bomb.epub").click();
+  ok("and both leave you on the folder page", lib());
+  rowIn("bomb.epub").click();
   ok("a chapter built to fill memory is refused, and the page says so",
     await until(() => has("too large to open")), text() && text().innerText);
   ok("the way past it stays", q(".glyph-book-foot") && status() === "1 of 1", status());
