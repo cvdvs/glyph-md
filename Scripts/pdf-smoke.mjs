@@ -257,6 +257,9 @@ const trashDir = await mkdtemp(path.join(tmpdir(), "glyph-trash-"));
 // Its own settings folder too, so pins made by a test never reach the real ones.
 // The pairing token stays where it is (rule 44).
 const configDir = await mkdtemp(path.join(tmpdir(), "glyph-config-"));
+// A secure address for the recorder to offer. Nothing is ever fetched from it: a
+// test page has a microphone, and notes-smoke only reads where the link points.
+await writeFile(path.join(configDir, "secure-origin"), "https://glyph.test\n");
 const PORT = 30000 + (process.pid % 9000);
 // Whisper is played by a stand-in that answers by the text it is sent.
 const srv = spawn(process.execPath, [path.join(HERE, "..", "server", "glyph-server.mjs"), root, `--port=${PORT}`],

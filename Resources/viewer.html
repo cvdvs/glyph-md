@@ -4874,11 +4874,33 @@ window.__glyphInstallChrome = function () {
     }
   }
 
+  // Arriving from the plain address's "Open secure Glyph", or Safari reusing the
+  // tab it opened for it last time: open the note or folder named, then keep only
+  // the pairing in the address (rule 46), so a Home Screen icon saved from here
+  // opens the library rather than that one note.
+  function arrive() {
+    const ask = new URLSearchParams((location.hash || "").slice(1));
+    const note = ask.get("open");
+    const folder = ask.get("folder");
+    if (note == null && folder == null) return;
+    history.replaceState(null, "", location.pathname + location.search +
+      "#token=" + encodeURIComponent(ask.get("token") || glyphToken()));
+    if (note) {
+      libraryPath = folderOf(note);
+      renderLibrary();
+      openFromServer(note);
+    } else {
+      openLibrary(folder);
+    }
+  }
+
   function initServer() {
     // Land on the file list so the phone opens to "what can I read?".
     document.body.classList.toggle("glyph-wide", wide());
     openLibrary("");
     checkVoice();
+    arrive();
+    window.addEventListener("hashchange", arrive);
     // When the wifi comes back, flush every note that still has an edit waiting.
     window.addEventListener("online", () => {
       docs.forEach((d) => { if (d.serverPath && d.pendingSave) scheduleServerSave(d, { immediate: true }); });
@@ -6131,8 +6153,18 @@ window.__glyphInstallChrome = function () {
       if (voice.blob) again.addEventListener("click", sendVoice);
       if (state === "insecure" && secureOrigin) {
         const go = elem("button", "glyph-text-button glyph-voice-link", "Open secure Glyph");
-        go.addEventListener("click", () => {
-          location.href = secureOrigin + "/#token=" + encodeURIComponent(glyphToken());
+        go.dataset.to = secureLink();
+        go.addEventListener("click", async () => {
+          go.disabled = true;
+          // The secure address keeps its own drafts, apart from this one's, so a
+          // new note gets its file and every edit reaches the Mac before leaving.
+          const d = active();
+          if (d) {
+            captureActive();
+            if (d.isFresh) await commitFresh(d);
+            if (d.serverPath && !(await settle([d], d.serverPath, false))) { go.disabled = false; return; }
+          }
+          location.href = secureLink();
         });
         actions.append(cancel, go);
       } else {
@@ -6141,6 +6173,15 @@ window.__glyphInstallChrome = function () {
       voiceSheet.append(note, actions);
     }
     voice.levelEl = level;
+  }
+  // Where "Open secure Glyph" goes: the same note, or the same folder, at the
+  // secure address. The token rides in the fragment, which never leaves the phone.
+  function secureLink() {
+    const d = active();
+    const folder = d ? (d.isFresh ? d.freshFolder || "" : "") : libraryPath;
+    const where = d && d.serverPath ? "&open=" + encodeURIComponent(d.serverPath)
+      : folder ? "&folder=" + encodeURIComponent(folder) : "";
+    return secureOrigin + "/#token=" + encodeURIComponent(glyphToken()) + where;
   }
   function setLang(code) {
     try { localStorage.setItem("glyphVoiceLang", code); } catch (e) { /* private mode */ }
@@ -6161,7 +6202,7 @@ window.__glyphInstallChrome = function () {
     overlay("voice");
     if (!window.isSecureContext || !navigator.mediaDevices || !window.MediaRecorder) {
       paintVoice("insecure", secureOrigin
-        ? "Your iPhone allows the microphone only on Glyph's secure address."
+        ? "Your iPhone allows the microphone only on Glyph's secure address. Add that one to your Home Screen and the microphone works right in the app."
         : "Your iPhone allows the microphone only on a secure (https) address.");
       return;
     }

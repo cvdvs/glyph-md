@@ -409,6 +409,38 @@
   menu("Move to Trash").click();
   ok("an empty folder goes to the Trash without a question", await until(() => !folderRowIn("Work"), 5000) && !askShown());
 
+  // ------------------------------------------------ the plain address and the secure one
+  // On the plain address the recorder sends you to the secure one, and the note
+  // goes with you. Without MediaRecorder this page looks like the plain address.
+  ok("a note opens by name", await window.glyphOpenNote("note.md") === true && /A note beside the PDF/.test(md().innerText));
+  const recorder = window.MediaRecorder;
+  window.MediaRecorder = undefined;
+  q(".glyph-mic").click();
+  const go = await until(() => q(".glyph-voice-link"));
+  ok("without a microphone the recorder offers the secure address, and says to keep that one",
+    !!go && /Home Screen/.test(q("#glyph-voice").textContent), q("#glyph-voice").textContent);
+  const token = (location.hash.match(/token=([a-f0-9]+)/) || [])[1];
+  // The pairing token is never printed (rule 44), not even in a test's detail.
+  const hideToken = (text) => String(text).split(token).join("…");
+  ok("and the way there opens this same note",
+    !!go && go.dataset.to === "https://glyph.test/#token=" + token + "&open=note.md",
+    go && hideToken(go.dataset.to));
+  qa("#glyph-voice button").find((b) => b.textContent === "Cancel").click();
+  window.MediaRecorder = recorder;
+  await until(() => !shown(q("#glyph-voice")));
+
+  // Arriving there. Safari may reuse the tab it opened last time, so only the
+  // part after # changes, and the page has to notice.
+  location.hash = "#token=" + token + "&open=" + encodeURIComponent("drafts/plan.md");
+  ok("arriving with a note in the address opens it",
+    !!(await until(() => !lib() && /Plan for spring/.test(md().innerText))), md().innerText.slice(0, 80));
+  ok("and the address keeps only the pairing, for a Home Screen icon saved from there",
+    location.hash === "#token=" + token, hideToken(location.hash));
+  back();
+  ok("Back goes to that note's folder", !!(await until(() => lib() && rowIn("plan"))) && /drafts/.test(heading()), heading());
+  back();
+  await until(() => lib() && rowIn("note"));
+
   ok("no page errors", errors.length === 0, errors.join(" | "));
   ok("nothing was reported as going wrong", reports.length === 0, reports.join(" | "));
   ok("the security policy refused nothing", blocked.length === 0, blocked.slice(0, 3).join(" | "));

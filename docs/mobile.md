@@ -159,7 +159,18 @@ tailscale serve --bg --https=4322 http://127.0.0.1:4321
 
 Then put that address (`https://<this-mac>.<your-tailnet>.ts.net:4322`) on the
 first line of `~/.config/glyph/secure-origin`. The page reads it and offers to
-move there. Pair once on that address too: the token is stored per address.
+move there, taking the note you had open with it (any edit reaches the Mac
+first). Pair once on that address too: the token is stored per address. Best of
+all, add the HTTPS address to your home screen instead of the plain one, and the
+microphone works without leaving the app.
+
+## What the library leaves out
+
+Hidden files and folders (`.git`, `.obsidian`, anything starting with a dot) and
+`node_modules`, and the instructions written for AI assistants: `CLAUDE.md`,
+`AGENTS.md` and `GEMINI.md` anywhere, plus `memory.md` in a folder that has one
+of them (anywhere else, a note called "memory" is a note). They stay on disk,
+where the assistants read them; they just are not notes.
 
 ## What is safe, and what to avoid
 

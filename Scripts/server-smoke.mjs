@@ -374,7 +374,19 @@ async function main() {
     const rr = await fetch(`${base}/api/files`, { headers: auth() });
     return new Map((await rr.json()).files.map((f) => [f.path, f]));
   };
+  // Instructions for AI assistants stay on disk and out of the library.
+  await mkdir(path.join(drafts, "agents"));
+  await mkdir(path.join(drafts, "loose"));
+  for (const name of ["CLAUDE.md", "AGENTS.md", "GEMINI.md", "memory.md", "plan.md"]) {
+    await writeFile(path.join(drafts, "agents", name), `# ${name}\n`);
+  }
+  await writeFile(path.join(drafts, "loose", "memory.md"), "# Memory\n\nA note of my own.\n");
   let files = await listing();
+  ok("CLAUDE.md, AGENTS.md and GEMINI.md are left out of the list",
+     !files.has("agents/CLAUDE.md") && !files.has("agents/AGENTS.md") && !files.has("agents/GEMINI.md"));
+  ok("and so is memory.md beside them, but not a note next to them",
+     !files.has("agents/memory.md") && files.has("agents/plan.md"));
+  ok("a memory.md in a folder without them is a note like any other", files.has("loose/memory.md"));
   const meta = (p) => files.get(p) || {};
   ok("every entry has a title and a preview string",
      [...files.values()].every((f) => typeof f.title === "string" && f.title && typeof f.preview === "string"));

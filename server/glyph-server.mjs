@@ -50,6 +50,11 @@ const REPO = path.dirname(HERE);
 const MD_EXT = new Set([".md", ".markdown", ".mdown", ".mkd"]);
 const PLAIN_EXT = new Set([".txt", ".text", ".log"]);
 const SKIP_DIRS = new Set([".git", ".obsidian", "node_modules", ".trash", ".DS_Store"]);
+// Instructions for AI assistants, not notes: left on disk, where every session
+// reads them, and out of the library. memory.md is an assistant's log only in a
+// folder that has one of these, so a note called "memory" anywhere else shows.
+const AGENT_FILES = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
+const AGENT_LOG = "memory.md";
 const MAX_FILES = 5000;
 const MAX_WRITE_BYTES = 25 * 1024 * 1024;  // a .md note far past anything real
 const MAX_LOG_BYTES = 8 * 1024;
@@ -302,9 +307,11 @@ async function listFiles() {
     } catch {
       return;
     }
+    const forAgents = entries.some((e) => e.isFile() && AGENT_FILES.has(e.name));
     for (const e of entries) {
       if (found.length >= MAX_FILES) return;
       if (e.name.startsWith(".") || SKIP_DIRS.has(e.name)) continue;
+      if (e.isFile() && (AGENT_FILES.has(e.name) || (forAgents && e.name === AGENT_LOG))) continue;
       const abs = path.join(dir, e.name);
       const rel = relBase ? relBase + "/" + e.name : e.name;
       if (e.isDirectory()) {
